@@ -1674,3 +1674,41 @@ table.dataTable tbody tr:hover {
   background-color: #f8f9fa;
   z-index: 10;
 }
+
+/* Agregar este CSS para evitar que el backdrop sea clickeable */
+.modal {
+  pointer-events: none;
+  /* El modal completo no recibe clicks */
+}
+
+.modal-content {
+  pointer-events: auto;
+  /* Solo el contenido recibe clicks */
+}
+
+/* Opcional: hacer el backdrop más oscuro para indicar que no se puede cerrar */
+.modal {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Efecto de backdrop estático */
+.modal-shake {
+    animation: modalShake 0.5s ease-in-out;
+}
+
+@keyframes modalShake {
+    0%, 100% { transform: scale(1); }
+    25% { transform: scale(1.02); }
+    50% { transform: scale(1.01); }
+    75% { transform: scale(1.02); }
+}
+
+/* Mejorar la apariencia del backdrop */
+.modal {
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+}
+
+.modal-content {
+    transition: transform 0.3s ease;
+}
