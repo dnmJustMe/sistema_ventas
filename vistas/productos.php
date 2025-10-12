@@ -148,7 +148,7 @@ include_once 'plantillas/html_declaracion.inc.php';
                     <label>Fecha de Creación:</label>
                     <span id="detalle-fecha"></span>
                 </div>
-                <div class="detalle-item">
+                <div class="detalle-item imagenes-item">
                     <label>Imágenes:</label>
                     <div id="detalle-imagenes" class="imagenes-grid"></div>
                 </div>
@@ -209,16 +209,18 @@ include_once 'plantillas/html_declaracion.inc.php';
     color: #666;
 }
 
+.imagenes-item { align-items: stretch; }
+.imagenes-item label { align-self: flex-start; margin-top: 4px; }
 .imagenes-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
     align-items: start;
 }
 
 .imagenes-grid img {
     width: 100%;
-    height: 90px;
+    height: 120px;
     object-fit: cover;
     border-radius: 4px;
     border: 1px solid #eee;

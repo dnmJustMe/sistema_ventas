@@ -374,7 +374,8 @@ class ProductosManager {
                 `;
                 preview.appendChild(card);
 
-                card.querySelector('.dz-remove').addEventListener('click', () => {
+                card.querySelector('.dz-remove').addEventListener('click', (e) => {
+                    e.stopPropagation();
                     const idx = Array.from(preview.children).indexOf(card);
                     card.remove();
                     this.removeFileAtIndex(input, idx);
@@ -383,7 +384,10 @@ class ProductosManager {
         };
 
         // Click para abrir file chooser
-        dropzone.addEventListener('click', () => input.click());
+        dropzone.addEventListener('click', (e) => {
+            if (e.target.closest('.dz-actions')) return;
+            input.click();
+        });
         input.addEventListener('change', (e) => onFiles(e.target.files));
         dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
         dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
@@ -437,7 +441,10 @@ class ProductosManager {
             });
         };
 
-        dz.addEventListener('click', () => input.click());
+        dz.addEventListener('click', (e) => {
+            if (e.target.closest('.dz-actions')) return;
+            input.click();
+        });
         input.addEventListener('change', (e) => {
             if (e.target.files && e.target.files[0]) setSingle(e.target.files[0]);
         });
@@ -520,7 +527,8 @@ class ProductosManager {
             </div>
         `;
         preview.appendChild(card);
-        card.querySelector('.dz-remove').addEventListener('click', () => {
+            card.querySelector('.dz-remove').addEventListener('click', (e) => {
+                e.stopPropagation();
             card.remove();
             this.markImagenForDeletion(principal.id);
         });
