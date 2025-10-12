@@ -86,6 +86,18 @@ include_once 'plantillas/html_declaracion.inc.php';
                         <!-- Las categorías se cargarán via AJAX -->
                     </select>
                 </div>
+
+                <div class="form-group">
+                    <label>Imagen principal *</label>
+                    <input type="file" id="producto-imagen-principal" name="imagen_principal_file" accept="image/*">
+                    <div class="text-muted" style="font-size:12px">Obligatoria al crear. Será la foto destacada.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Imágenes adicionales</label>
+                    <input type="file" id="producto-imagenes" name="imagenes[]" accept="image/*" multiple>
+                    <small>Opcionales. JPG, PNG, WEBP o GIF. Máx 5 MB c/u.</small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="cancelar-producto">Cancelar</button>
@@ -135,6 +147,10 @@ include_once 'plantillas/html_declaracion.inc.php';
                 <div class="detalle-item">
                     <label>Fecha de Creación:</label>
                     <span id="detalle-fecha"></span>
+                </div>
+                <div class="detalle-item imagenes-item">
+                    <label>Imágenes:</label>
+                    <div id="detalle-imagenes" class="imagenes-grid"></div>
                 </div>
             </div>
         </div>
@@ -193,6 +209,41 @@ include_once 'plantillas/html_declaracion.inc.php';
     color: #666;
 }
 
+.imagenes-item { align-items: stretch; }
+.imagenes-item label { align-self: flex-start; margin-top: 4px; }
+.imagenes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.imagenes-grid img {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
+/* Fullscreen viewer */
+.fs-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; align-items: center; justify-content: center; z-index: 9999; }
+.fs-backdrop img { max-width: 92vw; max-height: 92vh; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.fs-backdrop.active { display: flex; }
+
+/* Dropzone styles */
+.dropzone-wrapper { border: 1px dashed #bbb; border-radius: 8px; padding: 14px; background: #fafafa; margin-top: 4px; }
+.dropzone { cursor: pointer; padding: 12px; border-radius: 8px; text-align: center; color: #666; }
+.dropzone.dragover { background: #f0f8ff; border-color: #5ab4f8; }
+.dz-instructions { font-size: 13px; margin-bottom: 10px; }
+.dz-hint { font-size: 12px; color: #999; margin-top: 4px; }
+.dz-preview, .dz-existentes { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.dz-item { position: relative; border: 1px solid #eee; border-radius: 6px; overflow: hidden; }
+.dz-item img { display: block; width: 100%; height: 110px; object-fit: cover; }
+.dz-actions { position: absolute; inset: auto 0 0 0; background: linear-gradient(transparent, rgba(0,0,0,.6)); color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 6px; }
+.dz-actions .dz-principal { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.dz-actions .dz-remove { background: #ff5b5b; border: none; color: #fff; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+
 /* Estilos para los botones de acción */
 .btn-sm {
     margin: 0 2px;
@@ -209,6 +260,9 @@ include_once 'plantillas/html_declaracion.inc.php';
 }
 </style>
 
+<div class="fs-backdrop" id="fs-backdrop"><img id="fs-image" src="" alt=""></div>
+
+<script>window.RUTA_IMG = '<?php echo RUTA_IMG ?>';</script>
 <script src="<?php echo RUTA_JS ?>productos.js"></script>
 <?php
 include_once 'plantillas/html_cierre.inc.php';

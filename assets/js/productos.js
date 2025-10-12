@@ -60,12 +60,15 @@ class ProductosManager {
                     };
                 },
                 "dataSrc": function(json) {
-                    if (json.success) {
-                        return json.data.productos;
-                    } else {
-                        console.error('Error cargando productos:', json.data?.message);
-                        return [];
+                    try {
+                        if (json && json.success) {
+                            return json.data.productos;
+                        }
+                        console.error('Error cargando productos:', json && (json.data?.message || json.message));
+                    } catch (e) {
+                        console.error('Respuesta inválida al listar productos', e);
                     }
+                    return [];
                 }
             },
             "columns": [
@@ -252,21 +255,78 @@ class ProductosManager {
         document.getElementById('detalle-margen').textContent = `$${margen.toFixed(2)} (${porcentajeMargen}%)`;
         document.getElementById('detalle-categoria').textContent = producto.categoria_nombre || 'Sin categoría';
         document.getElementById('detalle-fecha').textContent = new Date(producto.fecha_creado).toLocaleString('es-ES');
+
+        // Renderizar imágenes
+        const cont = document.getElementById('detalle-imagenes');
+        cont.innerHTML = '';
+        if (producto.imagenes && producto.imagenes.length) {
+            producto.imagenes.forEach(img => {
+                let url = img.path || '';
+                if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
+                    url = (window.RUTA_IMG || '/assets/img/') + url;
+                }
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'relative';
+                const badge = document.createElement('span');
+                badge.textContent = 'Principal';
+                badge.style.cssText = 'position:absolute;top:6px;left:6px;background:#3AC47D;color:white;padding:2px 6px;border-radius:4px;font-size:11px;display:' + (img.es_principal ? 'inline-block' : 'none');
+                const el = document.createElement('img');
+                el.src = url;
+                el.alt = producto.nombre;
+                // Abrir fullscreen al click
+                el.addEventListener('click', () => this.abrirFullscreen(url));
+                wrapper.appendChild(el);
+                wrapper.appendChild(badge);
+                cont.appendChild(wrapper);
+            });
+        } else {
+            cont.innerHTML = '<span style="color:#888">Sin imágenes</span>';
+        }
         
         modal.style.display = 'block';
     }
 
-    ocultarModalDetalles() {
-        document.getElementById('modal-detalles-producto').style.display = 'none';
+    abrirFullscreen(url) {
+        const fs = document.getElementById('fs-backdrop');
+        const img = document.getElementById('fs-image');
+        if (!fs || !img) return;
+        img.src = url;
+        fs.classList.add('active');
+        fs.addEventListener('click', () => fs.classList.remove('active'), { once: true });
     }
 
-    mostrarModalProducto(producto = null) {
+    ocultarModalDetalles() {
+        const modal = document.getElementById('modal-detalles-producto');
+        const cont = document.getElementById('detalle-imagenes');
+        if (cont) cont.innerHTML = '';
+        modal.style.display = 'none';
+    }
+
+    async mostrarModalProducto(producto = null) {
         const modal = document.getElementById('modal-producto');
         const titulo = document.getElementById('titulo-modal-producto');
         const form = document.getElementById('form-producto');
         
+        // Reset completo del formulario y contenedores visuales
         form.reset();
+        // Limpiar inputs
+        const inputImgs = document.getElementById('producto-imagenes');
+        const inputPrincipal = document.getElementById('producto-imagen-principal');
+        if (inputImgs) { inputImgs.value = ''; }
+        if (inputPrincipal) { inputPrincipal.value = ''; }
         
+        // Eliminar wrappers previos dentro del modal para evitar acumulación
+        modal.querySelectorAll('.dropzone-wrapper').forEach(w => w.remove());
+        // Eliminar inputs ocultos residuales
+        ['imagenes_eliminar','imagen_principal_existente'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+
+        // Asegurar que categorías estén cargadas antes de setear el select
+        await this.ensureCategoriasCargadas();
+
+        // Construir UI de dropzones: principal y extras
+        this.enhanceDropzonePrincipal();
+        this.enhanceDropzoneExtras();
+
         if (producto) {
             titulo.textContent = 'Editar Producto';
             document.getElementById('producto-id').value = producto.id;
@@ -275,6 +335,9 @@ class ProductosManager {
             document.getElementById('producto-costo').value = producto.costo;
             document.getElementById('producto-precio').value = producto.precio_venta;
             document.getElementById('producto-categoria').value = producto.categoria_id;
+            // Render imágenes existentes con opción de eliminar y reemplazar principal
+            this.renderImagenPrincipalExistente(producto);
+            this.renderImagenesExistentes(producto);
         } else {
             titulo.textContent = 'Agregar Producto';
             document.getElementById('producto-id').value = '';
@@ -283,7 +346,260 @@ class ProductosManager {
         modal.style.display = 'block';
     }
 
+    async ensureCategoriasCargadas() {
+        const select = document.getElementById('producto-categoria');
+        if (!select) return;
+        // Si solo está el placeholder, recargar
+        if (select.options.length <= 1) {
+            try { await this.cargarCategoriasParaModal(); } catch (_) {}
+        }
+    }
+
+    enhanceDropzoneExtras() {
+        const input = document.getElementById('producto-imagenes');
+        if (!input) return;
+        // Evitar duplicar
+        if (input.dataset.enhanced === '1') return;
+        input.dataset.enhanced = '1';
+
+        // Contenedor drop
+        const wrapper = document.createElement('div');
+        wrapper.className = 'dropzone-wrapper';
+        wrapper.innerHTML = `
+            <div class="dropzone" id="dropzone">
+                <div class="dz-instructions">
+                    Arrastra y suelta imágenes adicionales aquí o haz clic para seleccionar.
+                    <div class="dz-hint">JPG, PNG, WEBP, GIF. Máx 5MB c/u.</div>
+                </div>
+                <div class="dz-preview" id="dz-preview"></div>
+            </div>
+        `;
+        input.parentNode.insertBefore(wrapper, input);
+        input.style.display = 'none';
+
+        const dropzone = wrapper.querySelector('#dropzone');
+        const preview = wrapper.querySelector('#dz-preview');
+
+        const onFiles = (fileList) => {
+            const files = Array.from(fileList);
+            files.forEach((file) => {
+                if (!file.type.startsWith('image/')) return;
+                const url = URL.createObjectURL(file);
+                const card = document.createElement('div');
+                card.className = 'dz-item';
+                card.innerHTML = `
+                    <img src="${url}" alt="preview">
+                    <div class="dz-actions">
+                        <button type="button" class="dz-remove">Quitar</button>
+                    </div>
+                `;
+                preview.appendChild(card);
+
+                card.querySelector('.dz-remove').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = Array.from(preview.children).indexOf(card);
+                    card.remove();
+                    this.removeFileAtIndex(input, idx);
+                });
+            });
+        };
+
+        // Click para abrir file chooser
+        dropzone.addEventListener('click', (e) => {
+            if (e.target.closest('.dz-actions')) return;
+            input.click();
+        });
+        input.addEventListener('change', (e) => onFiles(e.target.files));
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            onFiles(e.dataTransfer.files);
+        });
+    }
+
+    // Dropzone para principal (solo 1 imagen)
+    enhanceDropzonePrincipal() {
+        const input = document.getElementById('producto-imagen-principal');
+        if (!input) return;
+        if (input.dataset.enhanced === '1') return;
+        input.dataset.enhanced = '1';
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'dropzone-wrapper';
+        wrapper.innerHTML = `
+            <div class="dropzone" id="dropzone-principal">
+                <div class="dz-instructions">
+                    Arrastra la imagen principal aquí o haz clic para seleccionar.
+                    <div class="dz-hint">Obligatoria. Reemplaza la anterior si eliges una nueva.</div>
+                </div>
+                <div class="dz-preview" id="dz-preview-principal"></div>
+            </div>
+        `;
+        input.parentNode.insertBefore(wrapper, input);
+        input.style.display = 'none';
+
+        const dz = wrapper.querySelector('#dropzone-principal');
+        const preview = wrapper.querySelector('#dz-preview-principal');
+
+        const setSingle = (file) => {
+            // Limpiar previa
+            preview.innerHTML = '';
+            const url = URL.createObjectURL(file);
+            const card = document.createElement('div');
+            card.className = 'dz-item';
+            card.innerHTML = `
+                <img src="${url}" alt="principal">
+                <div class="dz-actions">
+                    <button type="button" class="dz-remove">Quitar</button>
+                </div>
+            `;
+            preview.appendChild(card);
+            card.querySelector('.dz-remove').addEventListener('click', () => {
+                preview.innerHTML = '';
+                input.value = '';
+            });
+        };
+
+        dz.addEventListener('click', (e) => {
+            if (e.target.closest('.dz-actions')) return;
+            input.click();
+        });
+        input.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) setSingle(e.target.files[0]);
+        });
+        dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', (e) => {
+            e.preventDefault(); dz.classList.remove('dragover');
+            const f = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) { setSingle(f); const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; }
+        });
+    }
+
+    removeFileAtIndex(input, index) {
+        // Nota: No podemos mutar FileList nativo directamente. Este soporte es limitado sin librería.
+        // En este MVP, solo quitamos la vista; el servidor ignorará índices no coincidentes.
+        // Alternativa completa requiere DataTransfer para recrear FileList (no compatible en todos los navegadores legacy):
+        try {
+            const dt = new DataTransfer();
+            const files = Array.from(input.files);
+            files.forEach((f, i) => { if (i !== index) dt.items.add(f); });
+            input.files = dt.files;
+        } catch (_e) { /* noop */ }
+    }
+
+    renderImagenesExistentes(producto) {
+        const input = document.getElementById('producto-imagenes');
+        const wrapper = input && input.previousElementSibling && input.previousElementSibling.classList.contains('dropzone-wrapper')
+            ? input.previousElementSibling : null;
+        if (!wrapper) return;
+        const preview = wrapper.querySelector('#dz-preview');
+        // limpiar contenedores existentes previos
+        wrapper.querySelectorAll('.dz-existentes').forEach(e => e.remove());
+        const existentes = document.createElement('div');
+        existentes.className = 'dz-existentes';
+        preview.parentNode.insertBefore(existentes, preview);
+
+        // Pintar solo las que NO son principal
+        (producto.imagenes || []).filter(img => Number(img.es_principal) !== 1).forEach((img) => {
+            let url = img.path || '';
+            if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
+                url = (window.RUTA_IMG || '/assets/img/') + url;
+            }
+            const card = document.createElement('div');
+            card.className = 'dz-item existente';
+            card.dataset.imagenId = img.id;
+            card.innerHTML = `
+                <img src="${url}" alt="${this.escapeHtml(producto.nombre)}">
+                <div class="dz-actions">
+                    <button type="button" class="dz-remove">Eliminar</button>
+                </div>
+            `;
+            existentes.appendChild(card);
+
+            card.querySelector('.dz-remove').addEventListener('click', () => {
+                card.remove();
+                this.markImagenForDeletion(img.id);
+            });
+        });
+    }
+
+    renderImagenPrincipalExistente(producto) {
+        const principal = (producto.imagenes || []).find(img => img.es_principal == 1);
+        if (!principal) return;
+        const input = document.getElementById('producto-imagen-principal');
+        const wrapper = input && input.previousElementSibling && input.previousElementSibling.classList.contains('dropzone-wrapper')
+            ? input.previousElementSibling : null;
+        if (!wrapper) return;
+        const preview = wrapper.querySelector('#dz-preview-principal');
+        preview.innerHTML = '';
+        let url = principal.path || '';
+        if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
+            url = (window.RUTA_IMG || '/assets/img/') + url;
+        }
+        const card = document.createElement('div');
+        card.className = 'dz-item existente';
+        card.dataset.imagenId = principal.id;
+        card.innerHTML = `
+            <img src="${url}" alt="principal">
+            <div class="dz-actions">
+                <button type="button" class="dz-remove">Eliminar</button>
+            </div>
+        `;
+        preview.appendChild(card);
+            card.querySelector('.dz-remove').addEventListener('click', (e) => {
+                e.stopPropagation();
+            card.remove();
+            this.markImagenForDeletion(principal.id);
+        });
+        // Señalar al backend que no se cambia principal salvo que se suba nueva
+        let flag = document.getElementById('imagen_principal_existente');
+        if (!flag) {
+            flag = document.createElement('input');
+            flag.type = 'hidden';
+            flag.id = 'imagen_principal_existente';
+            flag.name = 'imagen_principal_existente';
+            document.getElementById('form-producto').appendChild(flag);
+        }
+        flag.value = String(principal.id);
+    }
+
+    markImagenForDeletion(id) {
+        let input = document.getElementById('imagenes_eliminar');
+        if (!input) {
+            input = document.createElement('input');
+            input.type = 'hidden';
+            input.id = 'imagenes_eliminar';
+            input.name = 'imagenes_eliminar';
+            document.getElementById('form-producto').appendChild(input);
+        }
+        const ids = input.value ? input.value.split(',') : [];
+        if (!ids.includes(String(id))) {
+            ids.push(String(id));
+            input.value = ids.join(',');
+        }
+    }
+
+    setImagenPrincipalExistente(id) {
+        let input = document.getElementById('imagen_principal_existente');
+        if (!input) {
+            input = document.createElement('input');
+            input.type = 'hidden';
+            input.id = 'imagen_principal_existente';
+            input.name = 'imagen_principal_existente';
+            document.getElementById('form-producto').appendChild(input);
+        }
+        input.value = String(id);
+    }
+
     ocultarModalProducto() {
+        // Limpieza total al cerrar modal
+        const form = document.getElementById('form-producto');
+        if (form) form.reset();
+        const dzWrappers = document.querySelectorAll('.dropzone-wrapper');
+        dzWrappers.forEach(w => w.remove());
         document.getElementById('modal-producto').style.display = 'none';
     }
 
@@ -304,16 +620,37 @@ class ProductosManager {
                 formData.append('accion', 'crear');
                 url = 'crear_producto';
             }
+
+            // Validar imagen principal obligatoria (en creación). En edición es opcional solo si ya hay una principal existente
+            const principalInput = document.getElementById('producto-imagen-principal');
+            if (!productoId && (!principalInput || !principalInput.files || principalInput.files.length === 0)) {
+                await this.mostrarError('Debe seleccionar una imagen principal');
+                // Enfocar visualmente el dropzone de principal
+                const dz = document.getElementById('dropzone-principal');
+                if (dz) { dz.classList.add('dragover'); setTimeout(() => dz.classList.remove('dragover'), 1200); }
+                return;
+            }
             
             const response = await fetch(url, {
                 method: 'POST',
                 body: formData
             });
             
-            const data = await response.json();
+            let data;
+            try {
+                data = await response.json();
+            } catch (e) {
+                const text = await response.text();
+                throw new Error('Respuesta no-JSON del servidor: ' + text.slice(0, 200));
+            }
             
             if (data.success) {
                 await this.mostrarExito(data.data.message || 'Operación exitosa');
+                // Reset visual y de inputs del modal para nueva creación/edición limpia
+                const form = document.getElementById('form-producto');
+                if (form) form.reset();
+                const dzWrappers = document.querySelectorAll('.dropzone-wrapper');
+                dzWrappers.forEach(w => w.remove());
                 this.ocultarModalProducto();
                 this.dataTable.ajax.reload();
             } else {
