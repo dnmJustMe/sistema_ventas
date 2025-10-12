@@ -305,12 +305,15 @@ class ProductosManager {
         const form = document.getElementById('form-producto');
         
         form.reset();
-        // Limpiar input de archivos si existe
+        // Limpiar inputs
         const inputImgs = document.getElementById('producto-imagenes');
+        const inputPrincipal = document.getElementById('producto-imagen-principal');
         if (inputImgs) { inputImgs.value = ''; }
+        if (inputPrincipal) { inputPrincipal.value = ''; }
         
-        // Construir UI de dropzone si existe el input file
-        this.enhanceDropzone();
+        // Construir UI de dropzones: principal y extras
+        this.enhanceDropzonePrincipal();
+        this.enhanceDropzoneExtras();
 
         if (producto) {
             titulo.textContent = 'Editar Producto';
@@ -320,7 +323,8 @@ class ProductosManager {
             document.getElementById('producto-costo').value = producto.costo;
             document.getElementById('producto-precio').value = producto.precio_venta;
             document.getElementById('producto-categoria').value = producto.categoria_id;
-            // Render imágenes existentes con opción de eliminar y marcar principal
+            // Render imágenes existentes con opción de eliminar y reemplazar principal
+            this.renderImagenPrincipalExistente(producto);
             this.renderImagenesExistentes(producto);
         } else {
             titulo.textContent = 'Agregar Producto';
@@ -330,7 +334,7 @@ class ProductosManager {
         modal.style.display = 'block';
     }
 
-    enhanceDropzone() {
+    enhanceDropzoneExtras() {
         const input = document.getElementById('producto-imagenes');
         if (!input) return;
         // Evitar duplicar
@@ -343,7 +347,7 @@ class ProductosManager {
         wrapper.innerHTML = `
             <div class="dropzone" id="dropzone">
                 <div class="dz-instructions">
-                    Arrastra y suelta imágenes aquí o haz clic para seleccionar.
+                    Arrastra y suelta imágenes adicionales aquí o haz clic para seleccionar.
                     <div class="dz-hint">JPG, PNG, WEBP, GIF. Máx 5MB c/u.</div>
                 </div>
                 <div class="dz-preview" id="dz-preview"></div>
@@ -365,20 +369,10 @@ class ProductosManager {
                 card.innerHTML = `
                     <img src="${url}" alt="preview">
                     <div class="dz-actions">
-                        <label class="dz-principal"><input type="radio" name="imagen_principal_radio" class="dz-principal-radio"> Principal</label>
                         <button type="button" class="dz-remove">Quitar</button>
                     </div>
                 `;
                 preview.appendChild(card);
-
-                // Al marcar principal, seteamos hidden imagen_principal con índice
-                const principalRadio = card.querySelector('.dz-principal-radio');
-                principalRadio.addEventListener('change', () => {
-                    // Encontrar índice del archivo en el input original
-                    // Truco: sin recrear FileList, usaremos posición visual
-                    const index = Array.from(preview.children).indexOf(card);
-                    this.setPrincipalIndex(index);
-                });
 
                 card.querySelector('.dz-remove').addEventListener('click', () => {
                     const idx = Array.from(preview.children).indexOf(card);
@@ -400,16 +394,60 @@ class ProductosManager {
         });
     }
 
-    setPrincipalIndex(index) {
-        let hidden = document.getElementById('imagen_principal');
-        if (!hidden) {
-            hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.id = 'imagen_principal';
-            hidden.name = 'imagen_principal';
-            document.getElementById('form-producto').appendChild(hidden);
-        }
-        hidden.value = String(index);
+    // Dropzone para principal (solo 1 imagen)
+    enhanceDropzonePrincipal() {
+        const input = document.getElementById('producto-imagen-principal');
+        if (!input) return;
+        if (input.dataset.enhanced === '1') return;
+        input.dataset.enhanced = '1';
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'dropzone-wrapper';
+        wrapper.innerHTML = `
+            <div class="dropzone" id="dropzone-principal">
+                <div class="dz-instructions">
+                    Arrastra la imagen principal aquí o haz clic para seleccionar.
+                    <div class="dz-hint">Obligatoria. Reemplaza la anterior si eliges una nueva.</div>
+                </div>
+                <div class="dz-preview" id="dz-preview-principal"></div>
+            </div>
+        `;
+        input.parentNode.insertBefore(wrapper, input);
+        input.style.display = 'none';
+
+        const dz = wrapper.querySelector('#dropzone-principal');
+        const preview = wrapper.querySelector('#dz-preview-principal');
+
+        const setSingle = (file) => {
+            // Limpiar previa
+            preview.innerHTML = '';
+            const url = URL.createObjectURL(file);
+            const card = document.createElement('div');
+            card.className = 'dz-item';
+            card.innerHTML = `
+                <img src="${url}" alt="principal">
+                <div class="dz-actions">
+                    <button type="button" class="dz-remove">Quitar</button>
+                </div>
+            `;
+            preview.appendChild(card);
+            card.querySelector('.dz-remove').addEventListener('click', () => {
+                preview.innerHTML = '';
+                input.value = '';
+            });
+        };
+
+        dz.addEventListener('click', () => input.click());
+        input.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) setSingle(e.target.files[0]);
+        });
+        dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', (e) => {
+            e.preventDefault(); dz.classList.remove('dragover');
+            const f = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) { setSingle(f); const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; }
+        });
     }
 
     removeFileAtIndex(input, index) {
@@ -447,7 +485,6 @@ class ProductosManager {
             card.innerHTML = `
                 <img src="${url}" alt="${this.escapeHtml(producto.nombre)}">
                 <div class="dz-actions">
-                    <label class="dz-principal"><input type="radio" name="imagen_principal_existente" ${img.id==principalId?'checked':''}> Principal</label>
                     <button type="button" class="dz-remove">Eliminar</button>
                 </div>
             `;
@@ -457,12 +494,46 @@ class ProductosManager {
                 card.remove();
                 this.markImagenForDeletion(img.id);
             });
-
-            const radio = card.querySelector('input[type="radio"]');
-            radio.addEventListener('change', () => {
-                this.setImagenPrincipalExistente(img.id);
-            });
         });
+    }
+
+    renderImagenPrincipalExistente(producto) {
+        const principal = (producto.imagenes || []).find(img => img.es_principal == 1);
+        if (!principal) return;
+        const input = document.getElementById('producto-imagen-principal');
+        const wrapper = input && input.previousElementSibling && input.previousElementSibling.classList.contains('dropzone-wrapper')
+            ? input.previousElementSibling : null;
+        if (!wrapper) return;
+        const preview = wrapper.querySelector('#dz-preview-principal');
+        preview.innerHTML = '';
+        let url = principal.path || '';
+        if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
+            url = (window.RUTA_IMG || '/assets/img/') + url;
+        }
+        const card = document.createElement('div');
+        card.className = 'dz-item existente';
+        card.dataset.imagenId = principal.id;
+        card.innerHTML = `
+            <img src="${url}" alt="principal">
+            <div class="dz-actions">
+                <button type="button" class="dz-remove">Eliminar</button>
+            </div>
+        `;
+        preview.appendChild(card);
+        card.querySelector('.dz-remove').addEventListener('click', () => {
+            card.remove();
+            this.markImagenForDeletion(principal.id);
+        });
+        // Señalar al backend que no se cambia principal salvo que se suba nueva
+        let flag = document.getElementById('imagen_principal_existente');
+        if (!flag) {
+            flag = document.createElement('input');
+            flag.type = 'hidden';
+            flag.id = 'imagen_principal_existente';
+            flag.name = 'imagen_principal_existente';
+            document.getElementById('form-producto').appendChild(flag);
+        }
+        flag.value = String(principal.id);
     }
 
     markImagenForDeletion(id) {
@@ -515,20 +586,11 @@ class ProductosManager {
                 url = 'crear_producto';
             }
 
-            // Validar que haya una imagen principal entre nuevas o existentes
-            const hasPrincipalNew = !!document.getElementById('imagen_principal')?.value;
-            const hasPrincipalExisting = !!document.getElementById('imagen_principal_existente')?.value;
-            if (!hasPrincipalNew && !hasPrincipalExisting) {
-                // Si no existe y hay imágenes nuevas, marcamos la primera nueva como principal por defecto
-                const preview = document.querySelector('.dz-preview');
-                if (preview && preview.children.length > 0) {
-                    this.setPrincipalIndex(0);
-                } else if (productoId) {
-                    // En edición, si tampoco hay existentes, dejar pasar (backend decidirá)
-                } else {
-                    await this.mostrarError('Debe seleccionar una imagen principal');
-                    return;
-                }
+            // Validar imagen principal obligatoria (en creación). En edición es opcional solo si ya hay una principal existente
+            const principalInput = document.getElementById('producto-imagen-principal');
+            if (!productoId && (!principalInput || !principalInput.files || principalInput.files.length === 0)) {
+                await this.mostrarError('Debe seleccionar una imagen principal');
+                return;
             }
             
             const response = await fetch(url, {

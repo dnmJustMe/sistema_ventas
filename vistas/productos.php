@@ -88,9 +88,15 @@ include_once 'plantillas/html_declaracion.inc.php';
                 </div>
 
                 <div class="form-group">
-                    <label for="producto-imagenes">Imágenes</label>
+                    <label>Imagen principal *</label>
+                    <input type="file" id="producto-imagen-principal" name="imagen_principal_file" accept="image/*" required>
+                    <div class="text-muted" style="font-size:12px">Obligatoria. Será la foto destacada en listados.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>Imágenes adicionales</label>
                     <input type="file" id="producto-imagenes" name="imagenes[]" accept="image/*" multiple>
-                    <small>JPG, PNG, WEBP o GIF. Máx 5 MB c/u.</small>
+                    <small>Opcionales. JPG, PNG, WEBP o GIF. Máx 5 MB c/u.</small>
                 </div>
             </div>
             <div class="modal-footer">

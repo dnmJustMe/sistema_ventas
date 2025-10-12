@@ -140,6 +140,44 @@ function procesar_subida_imagenes($conexion, $productoId) {
     return [ 'insertadas' => $ok, 'errores' => $errores ];
 }
 
+function procesar_subida_imagen_principal($conexion, $productoId) {
+    if (!isset($_FILES['imagen_principal_file'])) {
+        return [ 'insertadas' => 0, 'errores' => [] ];
+    }
+    $file = $_FILES['imagen_principal_file'];
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return [ 'insertadas' => 0, 'errores' => ['Error al subir imagen principal'] ];
+    }
+    if ($file['size'] > IMG_MAX_BYTES) {
+        return [ 'insertadas' => 0, 'errores' => ['Imagen principal supera 5MB'] ];
+    }
+    [$valido, $ext] = validar_mime_y_ext($file['tmp_name'], $file['name']);
+    if (!$valido) {
+        return [ 'insertadas' => 0, 'errores' => ['Tipo de archivo no permitido para principal'] ];
+    }
+    $uploadDir = obtener_directorio_upload();
+    $okDir = asegurar_directorio_upload($uploadDir);
+    if (!$okDir) {
+        return [ 'insertadas' => 0, 'errores' => ['No se pudo preparar el directorio de subida'] ];
+    }
+    $filename = generar_nombre_archivo($productoId, $ext);
+    $destino = $uploadDir . $filename;
+    if (!@move_uploaded_file($file['tmp_name'], $destino)) {
+        return [ 'insertadas' => 0, 'errores' => ['No se pudo guardar la imagen principal'] ];
+    }
+    // Insertar y marcar como principal; limpiar anteriores
+    $conexion->prepare("UPDATE imagenes SET es_principal = 0 WHERE producto_id = :pid")
+        ->execute([':pid' => $productoId]);
+    $imagen = new Imagen(null, $productoId, $filename, null, 1);
+    $ok = RepositorioImagen::insertar_imagen($conexion, $imagen);
+    if ($ok) {
+        return [ 'insertadas' => 1, 'errores' => [] ];
+    } else {
+        @unlink($destino);
+        return [ 'insertadas' => 0, 'errores' => ['No se pudo registrar la imagen principal en BD'] ];
+    }
+}
+
 function contar_imagenes_producto($conexion, $productoId) {
     $stmt = $conexion->prepare("SELECT COUNT(*) AS total FROM imagenes WHERE producto_id = :pid");
     $stmt->bindParam(':pid', $productoId, PDO::PARAM_INT);
@@ -329,11 +367,13 @@ try {
             if ($insertado) {
                 // ID del producto insertado
                 $productoId = $conexion->lastInsertId();
-                // Procesar imágenes si llegaron
+                // Procesar imagen principal (obligatoria en creación)
+                $principalResult = procesar_subida_imagen_principal($conexion, $productoId);
+                // Procesar imágenes adicionales si llegaron
                 $resultadoUpload = procesar_subida_imagenes($conexion, $productoId);
                 // Validar que haya al menos 1 imagen y una principal
                 $total = contar_imagenes_producto($conexion, $productoId);
-                if ($total === 0) {
+                if ($total === 0 || $principalResult['insertadas'] === 0) {
                     send_json([
                         'success' => false,
                         'data' => [ 'message' => 'Debe subir al menos una imagen del producto' ]
@@ -344,8 +384,8 @@ try {
                     'success' => true,
                     'data' => [
                         'message' => 'Producto creado exitosamente',
-                        'imagenes_insertadas' => $resultadoUpload['insertadas'],
-                        'errores_imagenes' => $resultadoUpload['errores']
+                        'imagenes_insertadas' => $resultadoUpload['insertadas'] + $principalResult['insertadas'],
+                        'errores_imagenes' => array_merge($resultadoUpload['errores'], $principalResult['errores'])
                     ]
                 ]);
             } else {
@@ -401,6 +441,9 @@ try {
             $actualizado = RepositorioProducto::actualizar_producto($conexion, $id, $nombre, $descripcion, $costo, $precio_venta, $categoria_id);
             
             if ($actualizado) {
+                // Si subieron imagen principal nueva, procesarla (reemplaza principal)
+                $principalResult = procesar_subida_imagen_principal($conexion, $id);
+
                 // Eliminar imágenes solicitadas (si hay)
                 if (!empty($_POST['imagenes_eliminar'])) {
                     $idsEliminar = array_filter(array_map('intval', explode(',', $_POST['imagenes_eliminar'])));
@@ -424,7 +467,7 @@ try {
 
                 // Determinar y fijar principal
                 $preferId = null;
-                if (!empty($_POST['imagen_principal_existente'])) {
+                if (!empty($_POST['imagen_principal_existente']) && ($principalResult['insertadas'] ?? 0) === 0) {
                     $preferId = (int)$_POST['imagen_principal_existente'];
                 }
                 unificar_principal($conexion, $id, $preferId);
@@ -433,8 +476,8 @@ try {
                     'success' => true,
                     'data' => [
                         'message' => 'Producto actualizado exitosamente',
-                        'imagenes_insertadas' => $resultadoUpload['insertadas'],
-                        'errores_imagenes' => $resultadoUpload['errores']
+                        'imagenes_insertadas' => $resultadoUpload['insertadas'] + ($principalResult['insertadas'] ?? 0),
+                        'errores_imagenes' => array_merge($resultadoUpload['errores'], $principalResult['errores'] ?? [])
                     ]
                 ]);
             } else {
