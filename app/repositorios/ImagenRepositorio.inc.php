@@ -1,5 +1,5 @@
 <?php
-include_once '../entidades/Imagen.inc.php';
+include_once 'app/entidades/Imagen.inc.php';
 
 class RepositorioImagen{
     

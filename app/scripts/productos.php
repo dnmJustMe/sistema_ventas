@@ -28,6 +28,8 @@ include_once 'app/repositorios/ImagenRepositorio.inc.php';
 include_once 'app/entidades/Imagen.inc.php';
 
 header('Content-Type: application/json');
+// Iniciar buffer para evitar que cualquier "print/echo" rompa el JSON
+if (ob_get_level() === 0) { ob_start(); }
 
 // Configuración de subida de imágenes
 const IMG_MAX_BYTES = 5 * 1024 * 1024; // 5MB
@@ -129,6 +131,20 @@ function procesar_subida_imagenes($conexion, $productoId) {
     return [ 'insertadas' => $ok, 'errores' => $errores ];
 }
 
+// Desactivar salida de errores en pantalla para no romper JSON
+@ini_set('display_errors', '0');
+@ini_set('display_startup_errors', '0');
+error_reporting(E_ALL);
+
+// Asegurar salida JSON limpia
+function send_json($payload, $status = 200) {
+    http_response_code($status);
+    while (ob_get_level() > 0) { @ob_end_clean(); }
+    header('Content-Type: application/json');
+    echo json_encode($payload);
+    exit;
+}
+
 try {
     $conexion = Conexion::obtener_conexion();
     
@@ -162,13 +178,12 @@ try {
                 $productosConCategorias[] = $productoArray;
             }
             
-            echo json_encode([
+            send_json([
                 'success' => true,
                 'data' => [
                     'productos' => $productosConCategorias
                 ]
             ]);
-            break;
             
         case 'obtener':
             $id = $_POST['id'] ?? null;
@@ -187,7 +202,7 @@ try {
                         }
                     }
                     $categoria = RepositorioCategoria::obtener_categoria_por_id($conexion, $producto->obtener_categoria_id());
-                    echo json_encode([
+                    send_json([
                         'success' => true,
                         'data' => [
                             'producto' => [
@@ -204,22 +219,22 @@ try {
                         ]
                     ]);
                 } else {
-                    echo json_encode([
+                    send_json([
                         'success' => false,
                         'data' => [
                             'message' => 'Producto no encontrado'
                         ]
-                    ]);
+                    ], 404);
                 }
             } else {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'ID no especificado'
                     ]
-                ]);
+                ], 400);
             }
-            break;
+            
             
         case 'crear':
             $nombre = $_POST['nombre'] ?? '';
@@ -230,23 +245,21 @@ try {
             
             // Validaciones
             if (empty($nombre)) {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'El nombre es requerido'
                     ]
-                ]);
-                break;
+                ], 400);
             }
             
             if (RepositorioProducto::nombre_existe($conexion, $nombre)) {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'Ya existe un producto con ese nombre'
                     ]
-                ]);
-                break;
+                ], 409);
             }
             
             $producto = new Producto(null, $nombre, $descripcion, $costo, $precio_venta, $categoria_id, null);
@@ -257,7 +270,7 @@ try {
                 $productoId = $conexion->lastInsertId();
                 // Procesar imágenes si llegaron
                 $resultadoUpload = procesar_subida_imagenes($conexion, $productoId);
-                echo json_encode([
+                send_json([
                     'success' => true,
                     'data' => [
                         'message' => 'Producto creado exitosamente',
@@ -266,14 +279,14 @@ try {
                     ]
                 ]);
             } else {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'Error al crear el producto'
                     ]
-                ]);
+                ], 500);
             }
-            break;
+            
             
         case 'actualizar':
             $id = $_POST['id'] ?? null;
@@ -284,37 +297,34 @@ try {
             $categoria_id = $_POST['categoria_id'] ?? null;
             
             if (!$id) {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'ID de producto no especificado'
                     ]
-                ]);
-                break;
+                ], 400);
             }
             
             // Verificar si el producto existe
             $productoExistente = RepositorioProducto::obtener_producto_por_id($conexion, $id);
             if (!$productoExistente) {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'Producto no encontrado'
                     ]
-                ]);
-                break;
+                ], 404);
             }
             
             // Verificar si el nombre ya existe (excluyendo el producto actual)
             if ($nombre !== $productoExistente->obtener_nombre()) {
                 if (RepositorioProducto::nombre_existe($conexion, $nombre)) {
-                    echo json_encode([
+                    send_json([
                         'success' => false,
                         'data' => [
                             'message' => 'Ya existe otro producto con ese nombre'
                         ]
-                    ]);
-                    break;
+                    ], 409);
                 }
             }
             
@@ -323,7 +333,7 @@ try {
             if ($actualizado) {
                 // Procesar imágenes adicionales si llegaron
                 $resultadoUpload = procesar_subida_imagenes($conexion, $id);
-                echo json_encode([
+                send_json([
                     'success' => true,
                     'data' => [
                         'message' => 'Producto actualizado exitosamente',
@@ -332,24 +342,23 @@ try {
                     ]
                 ]);
             } else {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'data' => [
                         'message' => 'Error al actualizar el producto'
                     ]
-                ]);
+                ], 500);
             }
-            break;
+            
             
         case 'eliminar':
             $id = $_POST['id'] ?? null;
             
             if (!$id) {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'message' => 'ID de producto no especificado'
-                ]);
-                break;
+                ], 400);
             }
             // Recopilar imágenes antes de eliminar en BD para poder borrar archivos
             $imagenesAntes = RepositorioImagen::obtener_imagenes_por_producto($conexion, $id);
@@ -364,29 +373,28 @@ try {
                         @unlink($file);
                     }
                 }
-                echo json_encode([
+                send_json([
                     'success' => true,
                     'message' => 'Producto eliminado exitosamente'
                 ]);
             } else {
-                echo json_encode([
+                send_json([
                     'success' => false,
                     'message' => 'Error al eliminar el producto'
-                ]);
+                ], 500);
             }
-            break;
+            
             
         default:
-            echo json_encode([
+            send_json([
                 'success' => false,
                 'message' => 'Acción no válida: ' . $accion
-            ]);
+            ], 400);
     }
     
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode([
+    send_json([
         'success' => false,
         'message' => 'Error del servidor: ' . $e->getMessage()
-    ]);
+    ], 500);
 }

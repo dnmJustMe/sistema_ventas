@@ -60,12 +60,15 @@ class ProductosManager {
                     };
                 },
                 "dataSrc": function(json) {
-                    if (json.success) {
-                        return json.data.productos;
-                    } else {
-                        console.error('Error cargando productos:', json.data?.message);
-                        return [];
+                    try {
+                        if (json && json.success) {
+                            return json.data.productos;
+                        }
+                        console.error('Error cargando productos:', json && (json.data?.message || json.message));
+                    } catch (e) {
+                        console.error('Respuesta inválida al listar productos', e);
                     }
+                    return [];
                 }
             },
             "columns": [
@@ -331,7 +334,13 @@ class ProductosManager {
                 body: formData
             });
             
-            const data = await response.json();
+            let data;
+            try {
+                data = await response.json();
+            } catch (e) {
+                const text = await response.text();
+                throw new Error('Respuesta no-JSON del servidor: ' + text.slice(0, 200));
+            }
             
             if (data.success) {
                 await this.mostrarExito(data.data.message || 'Operación exitosa');
