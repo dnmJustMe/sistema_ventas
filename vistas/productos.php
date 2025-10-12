@@ -89,8 +89,8 @@ include_once 'plantillas/html_declaracion.inc.php';
 
                 <div class="form-group">
                     <label>Imagen principal *</label>
-                    <input type="file" id="producto-imagen-principal" name="imagen_principal_file" accept="image/*" required>
-                    <div class="text-muted" style="font-size:12px">Obligatoria. Será la foto destacada en listados.</div>
+                    <input type="file" id="producto-imagen-principal" name="imagen_principal_file" accept="image/*">
+                    <div class="text-muted" style="font-size:12px">Obligatoria al crear. Será la foto destacada.</div>
                 </div>
 
                 <div class="form-group">

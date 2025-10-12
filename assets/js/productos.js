@@ -304,6 +304,7 @@ class ProductosManager {
         const titulo = document.getElementById('titulo-modal-producto');
         const form = document.getElementById('form-producto');
         
+        // Reset completo del formulario y contenedores visuales
         form.reset();
         // Limpiar inputs
         const inputImgs = document.getElementById('producto-imagenes');
@@ -311,6 +312,12 @@ class ProductosManager {
         if (inputImgs) { inputImgs.value = ''; }
         if (inputPrincipal) { inputPrincipal.value = ''; }
         
+        // Eliminar wrappers previos si existen para evitar acumulación
+        const dzPrincipalPrev = document.querySelector('#dropzone-principal')?.parentElement?.parentElement;
+        if (dzPrincipalPrev && dzPrincipalPrev.classList.contains('dropzone-wrapper')) dzPrincipalPrev.remove();
+        const dzExtrasPrev = document.querySelector('#dropzone')?.parentElement?.parentElement;
+        if (dzExtrasPrev && dzExtrasPrev.classList.contains('dropzone-wrapper')) dzExtrasPrev.remove();
+
         // Construir UI de dropzones: principal y extras
         this.enhanceDropzonePrincipal();
         this.enhanceDropzoneExtras();
@@ -573,6 +580,11 @@ class ProductosManager {
     }
 
     ocultarModalProducto() {
+        // Limpieza total al cerrar modal
+        const form = document.getElementById('form-producto');
+        if (form) form.reset();
+        const dzWrappers = document.querySelectorAll('.dropzone-wrapper');
+        dzWrappers.forEach(w => w.remove());
         document.getElementById('modal-producto').style.display = 'none';
     }
 
@@ -598,6 +610,9 @@ class ProductosManager {
             const principalInput = document.getElementById('producto-imagen-principal');
             if (!productoId && (!principalInput || !principalInput.files || principalInput.files.length === 0)) {
                 await this.mostrarError('Debe seleccionar una imagen principal');
+                // Enfocar visualmente el dropzone de principal
+                const dz = document.getElementById('dropzone-principal');
+                if (dz) { dz.classList.add('dragover'); setTimeout(() => dz.classList.remove('dragover'), 1200); }
                 return;
             }
             
@@ -616,6 +631,11 @@ class ProductosManager {
             
             if (data.success) {
                 await this.mostrarExito(data.data.message || 'Operación exitosa');
+                // Reset visual y de inputs del modal para nueva creación/edición limpia
+                const form = document.getElementById('form-producto');
+                if (form) form.reset();
+                const dzWrappers = document.querySelectorAll('.dropzone-wrapper');
+                dzWrappers.forEach(w => w.remove());
                 this.ocultarModalProducto();
                 this.dataTable.ajax.reload();
             } else {
