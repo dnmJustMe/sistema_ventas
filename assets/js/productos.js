@@ -296,10 +296,13 @@ class ProductosManager {
     }
 
     ocultarModalDetalles() {
-        document.getElementById('modal-detalles-producto').style.display = 'none';
+        const modal = document.getElementById('modal-detalles-producto');
+        const cont = document.getElementById('detalle-imagenes');
+        if (cont) cont.innerHTML = '';
+        modal.style.display = 'none';
     }
 
-    mostrarModalProducto(producto = null) {
+    async mostrarModalProducto(producto = null) {
         const modal = document.getElementById('modal-producto');
         const titulo = document.getElementById('titulo-modal-producto');
         const form = document.getElementById('form-producto');
@@ -312,11 +315,13 @@ class ProductosManager {
         if (inputImgs) { inputImgs.value = ''; }
         if (inputPrincipal) { inputPrincipal.value = ''; }
         
-        // Eliminar wrappers previos si existen para evitar acumulación
-        const dzPrincipalPrev = document.querySelector('#dropzone-principal')?.parentElement?.parentElement;
-        if (dzPrincipalPrev && dzPrincipalPrev.classList.contains('dropzone-wrapper')) dzPrincipalPrev.remove();
-        const dzExtrasPrev = document.querySelector('#dropzone')?.parentElement?.parentElement;
-        if (dzExtrasPrev && dzExtrasPrev.classList.contains('dropzone-wrapper')) dzExtrasPrev.remove();
+        // Eliminar wrappers previos dentro del modal para evitar acumulación
+        modal.querySelectorAll('.dropzone-wrapper').forEach(w => w.remove());
+        // Eliminar inputs ocultos residuales
+        ['imagenes_eliminar','imagen_principal_existente'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
+
+        // Asegurar que categorías estén cargadas antes de setear el select
+        await this.ensureCategoriasCargadas();
 
         // Construir UI de dropzones: principal y extras
         this.enhanceDropzonePrincipal();
@@ -339,6 +344,15 @@ class ProductosManager {
         }
         
         modal.style.display = 'block';
+    }
+
+    async ensureCategoriasCargadas() {
+        const select = document.getElementById('producto-categoria');
+        if (!select) return;
+        // Si solo está el placeholder, recargar
+        if (select.options.length <= 1) {
+            try { await this.cargarCategoriasParaModal(); } catch (_) {}
+        }
     }
 
     enhanceDropzoneExtras() {
@@ -482,13 +496,14 @@ class ProductosManager {
             ? input.previousElementSibling : null;
         if (!wrapper) return;
         const preview = wrapper.querySelector('#dz-preview');
+        // limpiar contenedores existentes previos
+        wrapper.querySelectorAll('.dz-existentes').forEach(e => e.remove());
         const existentes = document.createElement('div');
         existentes.className = 'dz-existentes';
         preview.parentNode.insertBefore(existentes, preview);
 
-        const principalId = (producto.imagenes || []).find(img => img.es_principal == 1)?.id || null;
-
-        (producto.imagenes || []).forEach((img) => {
+        // Pintar solo las que NO son principal
+        (producto.imagenes || []).filter(img => Number(img.es_principal) !== 1).forEach((img) => {
             let url = img.path || '';
             if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
                 url = (window.RUTA_IMG || '/assets/img/') + url;
