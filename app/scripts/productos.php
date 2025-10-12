@@ -24,8 +24,110 @@ if (!ControlSesion::sesion_iniciada()) {
 // Incluir repositorios
 include_once 'app/repositorios/ProductoRepositorio.inc.php';
 include_once 'app/repositorios/CategoriaRepositorio.inc.php';
+include_once 'app/repositorios/ImagenRepositorio.inc.php';
+include_once 'app/entidades/Imagen.inc.php';
 
 header('Content-Type: application/json');
+
+// Configuración de subida de imágenes
+const IMG_MAX_BYTES = 5 * 1024 * 1024; // 5MB
+const IMG_ALLOWED_MIME = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+
+function obtener_directorio_upload() {
+    // app/scripts -> subir dos niveles al root del proyecto
+    $root = dirname(__DIR__, 2);
+    return rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'assets' . DIRECTORY_SEPARATOR . 'img' . DIRECTORY_SEPARATOR;
+}
+
+function asegurar_directorio_upload($dir) {
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return is_dir($dir) && is_writable($dir);
+}
+
+function generar_nombre_archivo($productoId, $extension) {
+    try {
+        $random = bin2hex(random_bytes(8));
+    } catch (Exception $e) {
+        $random = uniqid('', true);
+    }
+    return 'prod_' . intval($productoId) . '_' . $random . '.' . $extension;
+}
+
+function validar_mime_y_ext($tmpName, $originalName) {
+    $finfo = function_exists('finfo_open') ? finfo_open(FILEINFO_MIME_TYPE) : false;
+    $mime = $finfo ? finfo_file($finfo, $tmpName) : null;
+    if ($finfo) { finfo_close($finfo); }
+    if ($mime && isset(IMG_ALLOWED_MIME[$mime])) {
+        return [true, IMG_ALLOWED_MIME[$mime]];
+    }
+    // Fallback por extensión si no se pudo determinar MIME
+    $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+    $map = array_flip(IMG_ALLOWED_MIME);
+    if ($ext && isset($map[$ext])) {
+        return [true, $ext];
+    }
+    return [false, null];
+}
+
+function procesar_subida_imagenes($conexion, $productoId) {
+    if (!isset($_FILES['imagenes'])) {
+        return [ 'insertadas' => 0, 'errores' => [] ];
+    }
+
+    $uploadDir = obtener_directorio_upload();
+    $okDir = asegurar_directorio_upload($uploadDir);
+    if (!$okDir) {
+        return [ 'insertadas' => 0, 'errores' => ['No se pudo preparar el directorio de subida'] ];
+    }
+
+    $names = $_FILES['imagenes']['name'];
+    $tmpNames = $_FILES['imagenes']['tmp_name'];
+    $sizes = $_FILES['imagenes']['size'];
+    $errors = $_FILES['imagenes']['error'];
+
+    $n = is_array($names) ? count($names) : 0;
+    $errores = [];
+    $ok = 0;
+
+    for ($i = 0; $i < $n; $i++) {
+        if ($errors[$i] !== UPLOAD_ERR_OK) {
+            $errores[] = 'Error al subir archivo ' . ($names[$i] ?? '');
+            continue;
+        }
+        if ($sizes[$i] > IMG_MAX_BYTES) {
+            $errores[] = 'Archivo demasiado grande: ' . ($names[$i] ?? '') . ' (máx 5MB)';
+            continue;
+        }
+        [$valido, $ext] = validar_mime_y_ext($tmpNames[$i], $names[$i]);
+        if (!$valido) {
+            $errores[] = 'Tipo de archivo no permitido: ' . ($names[$i] ?? '');
+            continue;
+        }
+
+        $filename = generar_nombre_archivo($productoId, $ext);
+        $destino = $uploadDir . $filename;
+
+        if (!@move_uploaded_file($tmpNames[$i], $destino)) {
+            $errores[] = 'No se pudo guardar el archivo: ' . $names[$i];
+            continue;
+        }
+
+        // Guardar en BD solo el nombre del archivo
+        $imagen = new Imagen(null, $productoId, $filename, null);
+        $insertada = RepositorioImagen::insertar_imagen($conexion, $imagen);
+        if ($insertada) {
+            $ok++;
+        } else {
+            // Revertir archivo en disco si falla BD
+            @unlink($destino);
+            $errores[] = 'No se pudo registrar la imagen en BD: ' . $names[$i];
+        }
+    }
+
+    return [ 'insertadas' => $ok, 'errores' => $errores ];
+}
 
 try {
     $conexion = Conexion::obtener_conexion();
@@ -73,6 +175,17 @@ try {
             if ($id) {
                 $producto = RepositorioProducto::obtener_producto_por_id($conexion, $id);
                 if ($producto) {
+                    // Obtener imágenes del producto
+                    $imgs = RepositorioImagen::obtener_imagenes_por_producto($conexion, $id);
+                    $imagenes = [];
+                    if (!empty($imgs)) {
+                        foreach ($imgs as $img) {
+                            $imagenes[] = [
+                                'id' => $img->obtener_id(),
+                                'path' => $img->obtener_path(), // nombre de archivo
+                            ];
+                        }
+                    }
                     $categoria = RepositorioCategoria::obtener_categoria_por_id($conexion, $producto->obtener_categoria_id());
                     echo json_encode([
                         'success' => true,
@@ -85,7 +198,8 @@ try {
                                 'precio_venta' => $producto->obtener_precio_venta(),
                                 'categoria_id' => $producto->obtener_categoria_id(),
                                 'categoria_nombre' => $categoria ? $categoria->obtener_nombre() : 'Sin categoría',
-                                'fecha_creado' => $producto->obtener_fecha_creado()
+                                'fecha_creado' => $producto->obtener_fecha_creado(),
+                                'imagenes' => $imagenes,
                             ]
                         ]
                     ]);
@@ -139,10 +253,16 @@ try {
             $insertado = RepositorioProducto::insertar_producto($conexion, $producto);
             
             if ($insertado) {
+                // ID del producto insertado
+                $productoId = $conexion->lastInsertId();
+                // Procesar imágenes si llegaron
+                $resultadoUpload = procesar_subida_imagenes($conexion, $productoId);
                 echo json_encode([
                     'success' => true,
                     'data' => [
-                        'message' => 'Producto creado exitosamente'
+                        'message' => 'Producto creado exitosamente',
+                        'imagenes_insertadas' => $resultadoUpload['insertadas'],
+                        'errores_imagenes' => $resultadoUpload['errores']
                     ]
                 ]);
             } else {
@@ -201,10 +321,14 @@ try {
             $actualizado = RepositorioProducto::actualizar_producto($conexion, $id, $nombre, $descripcion, $costo, $precio_venta, $categoria_id);
             
             if ($actualizado) {
+                // Procesar imágenes adicionales si llegaron
+                $resultadoUpload = procesar_subida_imagenes($conexion, $id);
                 echo json_encode([
                     'success' => true,
                     'data' => [
-                        'message' => 'Producto actualizado exitosamente'
+                        'message' => 'Producto actualizado exitosamente',
+                        'imagenes_insertadas' => $resultadoUpload['insertadas'],
+                        'errores_imagenes' => $resultadoUpload['errores']
                     ]
                 ]);
             } else {
@@ -227,10 +351,19 @@ try {
                 ]);
                 break;
             }
-            
+            // Recopilar imágenes antes de eliminar en BD para poder borrar archivos
+            $imagenesAntes = RepositorioImagen::obtener_imagenes_por_producto($conexion, $id);
             $eliminado = RepositorioProducto::eliminar_producto($conexion, $id);
             
             if ($eliminado) {
+                // Borrar archivos en disco (las filas se borran por FK ON DELETE CASCADE)
+                $uploadDir = obtener_directorio_upload();
+                foreach ($imagenesAntes as $img) {
+                    $file = $uploadDir . $img->obtener_path();
+                    if (is_file($file)) {
+                        @unlink($file);
+                    }
+                }
                 echo json_encode([
                     'success' => true,
                     'message' => 'Producto eliminado exitosamente'

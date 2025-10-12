@@ -86,6 +86,12 @@ include_once 'plantillas/html_declaracion.inc.php';
                         <!-- Las categorías se cargarán via AJAX -->
                     </select>
                 </div>
+
+                <div class="form-group">
+                    <label for="producto-imagenes">Imágenes</label>
+                    <input type="file" id="producto-imagenes" name="imagenes[]" accept="image/*" multiple>
+                    <small>JPG, PNG, WEBP o GIF. Máx 5 MB c/u.</small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" id="cancelar-producto">Cancelar</button>
@@ -135,6 +141,10 @@ include_once 'plantillas/html_declaracion.inc.php';
                 <div class="detalle-item">
                     <label>Fecha de Creación:</label>
                     <span id="detalle-fecha"></span>
+                </div>
+                <div class="detalle-item">
+                    <label>Imágenes:</label>
+                    <div id="detalle-imagenes" class="imagenes-grid"></div>
                 </div>
             </div>
         </div>
@@ -193,6 +203,21 @@ include_once 'plantillas/html_declaracion.inc.php';
     color: #666;
 }
 
+.imagenes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 8px;
+    align-items: start;
+}
+
+.imagenes-grid img {
+    width: 100%;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid #eee;
+}
+
 /* Estilos para los botones de acción */
 .btn-sm {
     margin: 0 2px;
@@ -209,6 +234,7 @@ include_once 'plantillas/html_declaracion.inc.php';
 }
 </style>
 
+<script>window.RUTA_IMG = '<?php echo RUTA_IMG ?>';</script>
 <script src="<?php echo RUTA_JS ?>productos.js"></script>
 <?php
 include_once 'plantillas/html_cierre.inc.php';

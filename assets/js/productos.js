@@ -252,6 +252,24 @@ class ProductosManager {
         document.getElementById('detalle-margen').textContent = `$${margen.toFixed(2)} (${porcentajeMargen}%)`;
         document.getElementById('detalle-categoria').textContent = producto.categoria_nombre || 'Sin categoría';
         document.getElementById('detalle-fecha').textContent = new Date(producto.fecha_creado).toLocaleString('es-ES');
+
+        // Renderizar imágenes
+        const cont = document.getElementById('detalle-imagenes');
+        cont.innerHTML = '';
+        if (producto.imagenes && producto.imagenes.length) {
+            producto.imagenes.forEach(img => {
+                let url = img.path || '';
+                if (!(url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
+                    url = (window.RUTA_IMG || '/assets/img/') + url;
+                }
+                const el = document.createElement('img');
+                el.src = url;
+                el.alt = producto.nombre;
+                cont.appendChild(el);
+            });
+        } else {
+            cont.innerHTML = '<span style="color:#888">Sin imágenes</span>';
+        }
         
         modal.style.display = 'block';
     }
@@ -266,6 +284,9 @@ class ProductosManager {
         const form = document.getElementById('form-producto');
         
         form.reset();
+        // Limpiar input de archivos si existe
+        const inputImgs = document.getElementById('producto-imagenes');
+        if (inputImgs) { inputImgs.value = ''; }
         
         if (producto) {
             titulo.textContent = 'Editar Producto';
