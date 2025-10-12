@@ -18,7 +18,7 @@ class RepositorioImagen{
                if(count($resultado)){
                    foreach($resultado as $fila){
                        $imagen = new Imagen($fila['id'], $fila['producto_id'], $fila['path'], $fila['fecha_creado']);
-                       $imagen->producto_nombre = $fila['producto_nombre'];
+                    //    $imagen->producto_nombre = $fila['producto_nombre'];d
                        $imagenes[] = $imagen;
                    }
                }
@@ -85,7 +85,7 @@ class RepositorioImagen{
 				
 				if(!empty($resultado)){
 					$imagen = new Imagen($resultado['id'], $resultado['producto_id'], $resultado['path'], $resultado['fecha_creado']);
-					$imagen->producto_nombre = $resultado['producto_nombre'];
+					// $imagen->producto_nombre = $resultado['producto_nombre'];
 				}
 			}catch(PDOException $ex){
 				print 'ERROR' . $ex -> getMessage();
