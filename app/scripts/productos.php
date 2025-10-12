@@ -117,7 +117,16 @@ function procesar_subida_imagenes($conexion, $productoId) {
         }
 
         // Guardar en BD solo el nombre del archivo
-        $imagen = new Imagen(null, $productoId, $filename, null);
+        $esPrincipal = 0;
+        // Marcar como principal si viene marcado en formulario (por índice)
+        if (isset($_POST['imagen_principal'])) {
+            // valores aceptados: index del file o 'nuevo' cuando viene de drag-drop
+            $principalIndex = $_POST['imagen_principal'];
+            if ($principalIndex !== '' && strval($principalIndex) === strval($i)) {
+                $esPrincipal = 1;
+            }
+        }
+        $imagen = new Imagen(null, $productoId, $filename, null, $esPrincipal);
         $insertada = RepositorioImagen::insertar_imagen($conexion, $imagen);
         if ($insertada) {
             $ok++;
@@ -129,6 +138,57 @@ function procesar_subida_imagenes($conexion, $productoId) {
     }
 
     return [ 'insertadas' => $ok, 'errores' => $errores ];
+}
+
+function contar_imagenes_producto($conexion, $productoId) {
+    $stmt = $conexion->prepare("SELECT COUNT(*) AS total FROM imagenes WHERE producto_id = :pid");
+    $stmt->bindParam(':pid', $productoId, PDO::PARAM_INT);
+    $stmt->execute();
+    $row = $stmt->fetch();
+    return (int)($row['total'] ?? 0);
+}
+
+function unificar_principal($conexion, $productoId, $preferId = null) {
+    if ($preferId) {
+        // Forzar la imagen indicada como principal
+        $conexion->prepare("UPDATE imagenes SET es_principal = 0 WHERE producto_id = :pid")
+            ->execute([':pid' => $productoId]);
+        $stmt = $conexion->prepare("UPDATE imagenes SET es_principal = 1 WHERE id = :id AND producto_id = :pid");
+        $stmt->bindParam(':id', $preferId, PDO::PARAM_INT);
+        $stmt->bindParam(':pid', $productoId, PDO::PARAM_INT);
+        $stmt->execute();
+        return;
+    }
+
+    // Si ya hay imágenes marcadas como principal, dejar solo una y limpiar el resto
+    $stmt = $conexion->prepare("SELECT id FROM imagenes WHERE producto_id = :pid AND es_principal = 1 ORDER BY id DESC");
+    $stmt->bindParam(':pid', $productoId, PDO::PARAM_INT);
+    $stmt->execute();
+    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+
+    if (!empty($ids)) {
+        $keepId = (int)$ids[0];
+        if (count($ids) > 1) {
+            // Poner en 0 todas excepto la elegida
+            $in = implode(',', array_map('intval', array_slice($ids, 1)));
+            if ($in !== '') {
+                $conexion->exec("UPDATE imagenes SET es_principal = 0 WHERE producto_id = " . (int)$productoId . " AND id IN (" . $in . ")");
+            }
+        }
+        return;
+    }
+
+    // Si ninguna está marcada, establecer la más reciente como principal
+    $stmt = $conexion->prepare("SELECT id FROM imagenes WHERE producto_id = :pid ORDER BY id DESC LIMIT 1");
+    $stmt->bindParam(':pid', $productoId, PDO::PARAM_INT);
+    $stmt->execute();
+    $row = $stmt->fetch();
+    if (!empty($row)) {
+        $id = (int)$row['id'];
+        $stmt = $conexion->prepare("UPDATE imagenes SET es_principal = 1 WHERE id = :id");
+        $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+        $stmt->execute();
+    }
 }
 
 // Desactivar salida de errores en pantalla para no romper JSON
@@ -198,6 +258,7 @@ try {
                             $imagenes[] = [
                                 'id' => $img->obtener_id(),
                                 'path' => $img->obtener_path(), // nombre de archivo
+                                'es_principal' => $img->obtener_es_principal(),
                             ];
                         }
                     }
@@ -270,6 +331,15 @@ try {
                 $productoId = $conexion->lastInsertId();
                 // Procesar imágenes si llegaron
                 $resultadoUpload = procesar_subida_imagenes($conexion, $productoId);
+                // Validar que haya al menos 1 imagen y una principal
+                $total = contar_imagenes_producto($conexion, $productoId);
+                if ($total === 0) {
+                    send_json([
+                        'success' => false,
+                        'data' => [ 'message' => 'Debe subir al menos una imagen del producto' ]
+                    ], 400);
+                }
+                unificar_principal($conexion, $productoId);
                 send_json([
                     'success' => true,
                     'data' => [
@@ -331,8 +401,34 @@ try {
             $actualizado = RepositorioProducto::actualizar_producto($conexion, $id, $nombre, $descripcion, $costo, $precio_venta, $categoria_id);
             
             if ($actualizado) {
-                // Procesar imágenes adicionales si llegaron
+                // Eliminar imágenes solicitadas (si hay)
+                if (!empty($_POST['imagenes_eliminar'])) {
+                    $idsEliminar = array_filter(array_map('intval', explode(',', $_POST['imagenes_eliminar'])));
+                    if (!empty($idsEliminar)) {
+                        $uploadDir = obtener_directorio_upload();
+                        $existentes = RepositorioImagen::obtener_imagenes_por_producto($conexion, $id);
+                        $mapa = [];
+                        foreach ($existentes as $img) { $mapa[$img->obtener_id()] = $img; }
+                        foreach ($idsEliminar as $imgId) {
+                            if (isset($mapa[$imgId])) {
+                                $file = $uploadDir . $mapa[$imgId]->obtener_path();
+                                if (is_file($file)) { @unlink($file); }
+                                RepositorioImagen::eliminar_imagen($conexion, $imgId);
+                            }
+                        }
+                    }
+                }
+
+                // Subir nuevas imágenes si llegaron
                 $resultadoUpload = procesar_subida_imagenes($conexion, $id);
+
+                // Determinar y fijar principal
+                $preferId = null;
+                if (!empty($_POST['imagen_principal_existente'])) {
+                    $preferId = (int)$_POST['imagen_principal_existente'];
+                }
+                unificar_principal($conexion, $id, $preferId);
+
                 send_json([
                     'success' => true,
                     'data' => [

@@ -17,7 +17,7 @@ class RepositorioImagen{
                
                if(count($resultado)){
                    foreach($resultado as $fila){
-                       $imagen = new Imagen($fila['id'], $fila['producto_id'], $fila['path'], $fila['fecha_creado']);
+                      $imagen = new Imagen($fila['id'], $fila['producto_id'], $fila['path'], $fila['fecha_creado'], $fila['es_principal'] ?? 0);
                     //    $imagen->producto_nombre = $fila['producto_nombre'];d
                        $imagenes[] = $imagen;
                    }
@@ -51,15 +51,17 @@ class RepositorioImagen{
 		
 		if(isset($conexion)){
 			try{
-				$sql = "INSERT INTO imagenes(producto_id, path) VALUES(:producto_id, :path)";
+                $sql = "INSERT INTO imagenes(producto_id, path, es_principal) VALUES(:producto_id, :path, :es_principal)";
 				
                 $sentencia = $conexion -> prepare($sql);
                 
                 $producto_id = $imagen -> obtener_producto_id();
                 $path = $imagen -> obtener_path();
+                $es_principal = $imagen -> obtener_es_principal();
 				
 				$sentencia -> bindParam(':producto_id', $producto_id, PDO::PARAM_INT);
-				$sentencia -> bindParam(':path', $path, PDO::PARAM_STR);
+                $sentencia -> bindParam(':path', $path, PDO::PARAM_STR);
+                $sentencia -> bindParam(':es_principal', $es_principal, PDO::PARAM_INT);
 				
 				$imagen_insertada = $sentencia -> execute();
 			}catch(PDOException $ex){
@@ -98,7 +100,7 @@ class RepositorioImagen{
 		$imagenes = array();
 		if(isset($conexion)){
 			try{
-				$sql = "SELECT * FROM imagenes WHERE producto_id = :producto_id ORDER BY fecha_creado";
+                $sql = "SELECT * FROM imagenes WHERE producto_id = :producto_id ORDER BY es_principal DESC, fecha_creado";
 				$sentencia = $conexion -> prepare($sql);
 				$sentencia -> bindParam(':producto_id', $producto_id, PDO::PARAM_INT);
 				$sentencia -> execute();
@@ -106,7 +108,7 @@ class RepositorioImagen{
 				
 				if(count($resultado)){
 					foreach($resultado as $fila){
-						$imagenes[] = new Imagen($fila['id'], $fila['producto_id'], $fila['path'], $fila['fecha_creado']);
+                        $imagenes[] = new Imagen($fila['id'], $fila['producto_id'], $fila['path'], $fila['fecha_creado'], $fila['es_principal'] ?? 0);
 					}
 				}
 			}catch(PDOException $ex){
