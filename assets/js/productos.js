@@ -5,6 +5,7 @@ class ProductosManager {
         this.dataTable = null;
         this.currentProductoDetalles = null;
         this.galleryImages = [];
+        this.newExtraImages = [];
         this.currentGalleryIndex = 0;
         this.modalProducto = null;
         this.modalDetalles = null;
@@ -31,13 +32,13 @@ class ProductosManager {
     setupEventListeners() {
         // Modal producto
         document.getElementById('btn-agregar-producto').addEventListener('click', () => this.mostrarModalProducto());
-        
+
         // Form producto
         document.getElementById('form-producto').addEventListener('submit', (e) => this.guardarProducto(e));
-        
+
         // Modal detalles
         document.getElementById('editar-desde-detalles').addEventListener('click', () => this.editarDesdeDetalles());
-        
+
         // Modal eliminar
         document.getElementById('confirmar-eliminar').addEventListener('click', () => this.eliminarProductoConfirmado());
     }
@@ -54,7 +55,7 @@ class ProductosManager {
 
         const handleFiles = (files) => {
             if (files.length === 0) return;
-            
+
             // Solo procesar la primera imagen
             const file = files[0];
             if (!file.type.startsWith('image/')) {
@@ -64,7 +65,7 @@ class ProductosManager {
 
             // Limpiar preview anterior
             preview.innerHTML = '';
-            
+
             const url = URL.createObjectURL(file);
             const card = this.crearCardImagen(url, file.name, true);
             preview.appendChild(card);
@@ -77,16 +78,16 @@ class ProductosManager {
 
         // Eventos del dropzone
         dropzone.addEventListener('click', () => input.click());
-        
+
         dropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropzone.parentElement.classList.add('dragover');
         });
-        
+
         dropzone.addEventListener('dragleave', () => {
             dropzone.parentElement.classList.remove('dragover');
         });
-        
+
         dropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropzone.parentElement.classList.remove('dragover');
@@ -105,33 +106,45 @@ class ProductosManager {
         const preview = document.getElementById('dz-preview-extras');
 
         const handleFiles = (files) => {
-            const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
-            
-            fileArray.forEach(file => {
-                const url = URL.createObjectURL(file);
-                const card = this.crearCardImagen(url, file.name, false);
-                preview.appendChild(card);
+            console.log('handleFiles llamado con files:', Array.from(files).map(f => ({ name: f.name, size: f.size })));
 
-                // Agregar al input files
-                const dt = new DataTransfer();
-                Array.from(input.files).forEach(f => dt.items.add(f));
-                dt.items.add(file);
-                input.files = dt.files;
+            const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
+
+            console.log('fileArray filtrado:', fileArray.map(f => f.name));
+
+            if (fileArray.length === 0) return;
+
+            fileArray.forEach(file => {
+                console.log('Procesando file:', file.name);
+
+                if (!this.newExtraImages.some(existing => existing.name === file.name && existing.size === file.size)) {
+                    console.log('Agregando nuevo file:', file.name);
+                    this.newExtraImages.push(file);
+
+                    const url = URL.createObjectURL(file);
+                    const card = this.crearCardImagen(url, file.name, false);
+                    preview.appendChild(card);
+                } else {
+                    console.log('File duplicado detectado:', file.name);
+                    this.mostrarError(`La imagen "${file.name}" ya fue agregada.`);
+                }
             });
+
+            console.log('Archivos acumulados después de agregar:', this.newExtraImages.map(f => f.name));
         };
 
         // Eventos del dropzone
         dropzone.addEventListener('click', () => input.click());
-        
+
         dropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropzone.parentElement.classList.add('dragover');
         });
-        
+
         dropzone.addEventListener('dragleave', () => {
             dropzone.parentElement.classList.remove('dragover');
         });
-        
+
         dropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropzone.parentElement.classList.remove('dragover');
@@ -141,6 +154,8 @@ class ProductosManager {
         // Evento del input file
         input.addEventListener('change', (e) => {
             handleFiles(e.target.files);
+            // Limpiar el input después de procesar
+            input.files = new DataTransfer().files;
         });
     }
 
@@ -149,12 +164,12 @@ class ProductosManager {
         document.getElementById('fs-prev').addEventListener('click', () => this.galleryPrev());
         document.getElementById('fs-next').addEventListener('click', () => this.galleryNext());
         document.getElementById('fs-close').addEventListener('click', () => this.cerrarGallery());
-        
+
         // Navegación con teclado
         document.addEventListener('keydown', (e) => {
             if (!document.getElementById('fs-backdrop').classList.contains('active')) return;
-            
-            switch(e.key) {
+
+            switch (e.key) {
                 case 'ArrowLeft':
                     e.preventDefault();
                     this.galleryPrev();
@@ -174,26 +189,26 @@ class ProductosManager {
     crearCardImagen(url, filename, esPrincipal = false) {
         const card = document.createElement('div');
         card.className = `dz-item ${esPrincipal ? 'imagen-principal' : ''}`;
-        
+
         card.innerHTML = `
-            <img src="${url}" alt="${filename}">
-            <div class="dz-actions">
-                ${esPrincipal ? '<span class="dz-principal-badge">Principal</span>' : ''}
-                <button type="button" class="dz-remove">Eliminar</button>
-            </div>
-        `;
+        <img src="${url}" alt="${filename}">
+        <div class="dz-actions">
+            ${esPrincipal ? '<span class="dz-principal-badge">Principal</span>' : ''}
+            <button type="button" class="dz-remove">Eliminar</button>
+        </div>
+    `;
 
         // Evento para eliminar la imagen
         card.querySelector('.dz-remove').addEventListener('click', (e) => {
             e.stopPropagation();
             card.remove();
-            
+
             if (esPrincipal) {
                 // Limpiar el input file principal
                 document.getElementById('producto-imagen-principal').value = '';
             } else {
                 // Remover del input files
-                this.removerArchivoDelInput(filename);
+                this.removerNuevaImagenExtra(filename);
             }
         });
 
@@ -209,7 +224,7 @@ class ProductosManager {
         const card = document.createElement('div');
         card.className = `dz-item ${esPrincipal ? 'imagen-principal' : ''}`;
         card.dataset.imagenId = imagen.id;
-        
+
         card.innerHTML = `
             <img src="${url}" alt="${this.escapeHtml(producto.nombre)}">
             <div class="dz-actions">
@@ -221,12 +236,12 @@ class ProductosManager {
         // Evento para eliminar la imagen existente
         card.querySelector('.dz-remove').addEventListener('click', (e) => {
             e.stopPropagation();
-            
+
             if (esPrincipal) {
                 this.mostrarError('No puedes eliminar la imagen principal. Debes reemplazarla por una nueva.');
                 return;
             }
-            
+
             card.remove();
             this.marcarImagenParaEliminacion(imagen.id);
         });
@@ -234,23 +249,24 @@ class ProductosManager {
         return card;
     }
 
-    removerArchivoDelInput(filename) {
-        const input = document.getElementById('producto-imagenes');
-        const dt = new DataTransfer();
-        
-        Array.from(input.files).forEach(file => {
-            if (file.name !== filename) {
-                dt.items.add(file);
-            }
-        });
-        
-        input.files = dt.files;
+    removerNuevaImagenExtra(filename) {
+        const previousLength = this.newExtraImages.length;
+
+        // Remover de la lista acumulada
+        this.newExtraImages = this.newExtraImages.filter(file => file.name !== filename);
+
+        if (this.newExtraImages.length < previousLength) {
+            console.log('Archivo removido:', filename);
+            console.log('Archivos acumulados después de remover:', this.newExtraImages.map(f => f.name));
+        } else {
+            console.log('Intento de remover archivo no encontrado:', filename);
+        }
     }
 
     marcarImagenParaEliminacion(id) {
         let input = document.getElementById('imagenes_eliminar');
         const ids = input.value ? input.value.split(',').filter(i => i !== '') : [];
-        
+
         if (!ids.includes(String(id))) {
             ids.push(String(id));
             input.value = ids.join(',');
@@ -264,12 +280,12 @@ class ProductosManager {
             "ajax": {
                 "url": "get_productos",
                 "type": "POST",
-                "data": function(d) {
+                "data": function (d) {
                     return {
                         accion: 'listar'
                     };
                 },
-                "dataSrc": function(json) {
+                "dataSrc": function (json) {
                     try {
                         if (json && json.success) {
                             return json.data.productos;
@@ -284,33 +300,33 @@ class ProductosManager {
             "columns": [
                 { "data": "id" },
                 { "data": "nombre" },
-                { 
+                {
                     "data": "descripcion",
-                    "render": function(data) {
+                    "render": function (data) {
                         return data || '';
                     }
                 },
-                { 
+                {
                     "data": "costo",
-                    "render": function(data) {
+                    "render": function (data) {
                         return `$${parseFloat(data).toFixed(2)}`;
                     }
                 },
-                { 
+                {
                     "data": "precio_venta",
-                    "render": function(data) {
+                    "render": function (data) {
                         return `$${parseFloat(data).toFixed(2)}`;
                     }
                 },
-                { 
+                {
                     "data": "categoria_nombre",
-                    "render": function(data) {
+                    "render": function (data) {
                         return data || 'Sin categoría';
                     }
                 },
-                { 
+                {
                     "data": "fecha_creado",
-                    "render": function(data) {
+                    "render": function (data) {
                         return new Date(data).toLocaleString('es-ES', {
                             year: 'numeric',
                             month: '2-digit',
@@ -323,7 +339,7 @@ class ProductosManager {
                 },
                 {
                     "data": "id",
-                    "render": function(data, type, row) {
+                    "render": function (data, type, row) {
                         return `
                             <button class="btn btn-sm btn-info detalles-producto" data-id="${data}" title="Ver Detalles">
                                 <i class="fas fa-eye"></i>
@@ -367,18 +383,18 @@ class ProductosManager {
             "pageLength": 10,
             "lengthMenu": [5, 10, 25, 50]
         });
-        
+
         // Event listeners para botones dinámicos
         $('#tabla-productos').on('click', '.detalles-producto', (e) => {
             const id = $(e.currentTarget).data('id');
             this.mostrarDetallesProducto(id);
         });
-        
+
         $('#tabla-productos').on('click', '.editar-producto', (e) => {
             const id = $(e.currentTarget).data('id');
             this.editarProducto(id);
         });
-        
+
         $('#tabla-productos').on('click', '.eliminar-producto', (e) => {
             const id = $(e.currentTarget).data('id');
             this.mostrarModalEliminar(id);
@@ -397,9 +413,9 @@ class ProductosManager {
                 },
                 body: params
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 this.mostrarCategoriasEnSelect(data.categorias);
             } else {
@@ -414,7 +430,7 @@ class ProductosManager {
     mostrarCategoriasEnSelect(categorias) {
         const select = document.getElementById('producto-categoria');
         select.innerHTML = '<option value="">Seleccionar categoría...</option>' +
-            categorias.map(cat => 
+            categorias.map(cat =>
                 `<option value="${cat.id}">${this.escapeHtml(cat.nombre)}</option>`
             ).join('');
     }
@@ -432,9 +448,9 @@ class ProductosManager {
                 },
                 body: params
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 this.currentProductoDetalles = data.data.producto;
                 this.mostrarModalDetalles(this.currentProductoDetalles);
@@ -453,7 +469,7 @@ class ProductosManager {
         const precio = parseFloat(producto.precio_venta);
         const margen = precio - costo;
         const porcentajeMargen = costo > 0 ? ((margen / costo) * 100).toFixed(2) : 0;
-        
+
         // Llenar los detalles
         document.getElementById('detalle-id').textContent = producto.id;
         document.getElementById('detalle-nombre').textContent = producto.nombre;
@@ -466,7 +482,7 @@ class ProductosManager {
 
         // Renderizar imágenes en layout de 2 columnas
         this.renderizarImagenesDetalle(producto);
-        
+
         // Mostrar modal
         this.modalDetalles.show();
     }
@@ -514,10 +530,10 @@ class ProductosManager {
 
             const card = document.createElement('div');
             card.className = `imagen-card ${img.es_principal ? 'principal' : ''}`;
-            
+
             // Extraer nombre del archivo para mostrar
             const nombreArchivo = this.obtenerNombreArchivo(img.path);
-            
+
             card.innerHTML = `
                 ${img.es_principal ? '<div class="imagen-badge">Principal</div>' : ''}
                 <img src="${url}" alt="${this.escapeHtml(producto.nombre)} - Imagen ${index + 1}" 
@@ -540,7 +556,7 @@ class ProductosManager {
         this.currentGalleryIndex = index;
         this.actualizarVistaGallery();
         document.getElementById('fs-backdrop').classList.add('active');
-        
+
         // Prevenir scroll del body
         document.body.style.overflow = 'hidden';
     }
@@ -567,24 +583,24 @@ class ProductosManager {
         const imgElement = document.getElementById('fs-image');
         const counterElement = document.getElementById('fs-image-counter');
         const badgeElement = document.getElementById('fs-image-principal-badge');
-        
+
         imgElement.src = currentImage.url;
         imgElement.alt = `Imagen ${this.currentGalleryIndex + 1} de ${this.galleryImages.length}`;
-        
+
         // Actualizar contador
         counterElement.textContent = `${this.currentGalleryIndex + 1} / ${this.galleryImages.length}`;
-        
+
         // Mostrar/ocultar badge de imagen principal
         if (currentImage.es_principal) {
             badgeElement.style.display = 'flex';
         } else {
             badgeElement.style.display = 'none';
         }
-        
+
         // Mostrar/ocultar botones de navegación según sea necesario
         const prevBtn = document.getElementById('fs-prev');
         const nextBtn = document.getElementById('fs-next');
-        
+
         if (this.galleryImages.length <= 1) {
             prevBtn.style.display = 'none';
             nextBtn.style.display = 'none';
@@ -596,31 +612,31 @@ class ProductosManager {
 
     obtenerNombreArchivo(path) {
         if (!path) return 'imagen.jpg';
-        
+
         // Extraer el nombre del archivo de la ruta
         const partes = path.split('/');
         let nombre = partes[partes.length - 1];
-        
+
         // Limitar longitud del nombre para mostrar
         if (nombre.length > 20) {
             nombre = nombre.substring(0, 17) + '...';
         }
-        
+
         return nombre;
     }
 
     editarDesdeDetalles() {
         if (!this.currentProductoDetalles) return;
-        
+
         // Guardar referencia antes de cerrar
         const productoAEditar = this.currentProductoDetalles;
-        
+
         // Cerrar modal de detalles
         this.modalDetalles.hide();
-        
+
         // Limpiar la referencia después de cerrar
         this.currentProductoDetalles = null;
-        
+
         // Abrir modal de edición
         setTimeout(() => {
             this.mostrarModalProducto(productoAEditar);
@@ -630,21 +646,23 @@ class ProductosManager {
     mostrarModalProducto(producto = null) {
         const titulo = document.getElementById('modalProductoLabel');
         const form = document.getElementById('form-producto');
-        
+
         // Reset del formulario
         form.reset();
         document.getElementById('imagenes_eliminar').value = '';
         document.getElementById('imagen_principal_existente').value = '';
-        
+
         // Limpiar previews
         document.getElementById('dz-preview-principal').innerHTML = '';
         document.getElementById('dz-preview-extras').innerHTML = '';
         document.getElementById('imagenes-principal-existente').innerHTML = '';
         document.getElementById('imagenes-extras-existente').innerHTML = '';
-        
+
         // Limpiar inputs de archivos
         document.getElementById('producto-imagen-principal').value = '';
         document.getElementById('producto-imagenes').value = '';
+
+        this.newExtraImages = [];  // Resetear la lista de nuevas imágenes extras
 
         if (producto) {
             titulo.textContent = 'Editar Producto';
@@ -654,14 +672,14 @@ class ProductosManager {
             document.getElementById('producto-costo').value = producto.costo;
             document.getElementById('producto-precio').value = producto.precio_venta;
             document.getElementById('producto-categoria').value = producto.categoria_id;
-            
+
             // Mostrar imágenes existentes
             this.mostrarImagenesExistentes(producto);
         } else {
             titulo.textContent = 'Agregar Producto';
             document.getElementById('producto-id').value = '';
         }
-        
+
         this.modalProducto.show();
     }
 
@@ -676,7 +694,7 @@ class ProductosManager {
             const contenedor = document.getElementById('imagenes-principal-existente');
             const card = this.crearCardImagenExistente(imagenPrincipal, producto, true);
             contenedor.appendChild(card);
-            
+
             // Marcar que existe una imagen principal
             document.getElementById('imagen_principal_existente').value = imagenPrincipal.id;
         }
@@ -693,13 +711,23 @@ class ProductosManager {
 
     async guardarProducto(event) {
         event.preventDefault();
-        
+
         const formData = new FormData(event.target);
         const productoId = document.getElementById('producto-id').value;
 
+        console.log('Archivos acumulados antes de append:', this.newExtraImages.map(f => ({ name: f.name, size: f.size })));
+
+        // Agregar manualmente las imágenes extras a formData
+        this.newExtraImages.forEach(file => {
+            console.log('Append file a formData:', file.name);
+            formData.append('imagenes[]', file);
+        });
+
+        console.log('Número de imágenes extras a subir:', this.newExtraImages.length);
+
         try {
             let url;
-            
+
             if (productoId) {
                 formData.append('accion', 'actualizar');
                 formData.append('id', productoId);
@@ -712,7 +740,9 @@ class ProductosManager {
             // Validar que haya al menos una imagen (principal) en creación
             const tieneImagenPrincipalExistente = document.getElementById('imagen_principal_existente').value !== '';
             const tieneNuevaImagenPrincipal = document.getElementById('producto-imagen-principal').files.length > 0;
-            
+
+            console.log('Validación imagen principal:', { tieneImagenPrincipalExistente, tieneNuevaImagenPrincipal });
+
             if (!productoId && !tieneNuevaImagenPrincipal) {
                 await this.mostrarError('Debe seleccionar una imagen principal para el producto');
                 return;
@@ -723,20 +753,24 @@ class ProductosManager {
                 await this.mostrarError('El producto debe tener al menos una imagen principal');
                 return;
             }
-            
+
             const response = await fetch(url, {
                 method: 'POST',
                 body: formData
             });
-            
+
+            console.log('Respuesta del servidor status:', response.status);
+
             let data;
             try {
                 data = await response.json();
+                console.log('Respuesta JSON:', data);
             } catch (e) {
                 const text = await response.text();
+                console.log('Respuesta no JSON:', text);
                 throw new Error('Respuesta no-JSON del servidor: ' + text.slice(0, 200));
             }
-            
+
             if (data.success) {
                 await this.mostrarExito(data.data.message || 'Operación exitosa');
                 this.modalProducto.hide();
@@ -744,7 +778,7 @@ class ProductosManager {
             } else {
                 throw new Error(data.data?.message || 'Error en la operación');
             }
-            
+
         } catch (error) {
             console.error('Error guardando producto:', error);
             await this.mostrarError('Error al guardar producto: ' + error.message);
@@ -764,9 +798,9 @@ class ProductosManager {
                 },
                 body: params
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 this.mostrarModalProducto(data.data.producto);
             } else {
@@ -793,7 +827,7 @@ class ProductosManager {
             const params = new URLSearchParams();
             params.append('accion', 'eliminar');
             params.append('id', this.productoAEliminar);
-            
+
             const response = await fetch('eliminar_producto', {
                 method: 'POST',
                 headers: {
@@ -801,9 +835,9 @@ class ProductosManager {
                 },
                 body: params
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 await this.mostrarExito(data.message || 'Producto eliminado exitosamente');
                 this.modalEliminar.hide();
@@ -811,7 +845,7 @@ class ProductosManager {
             } else {
                 throw new Error(data.message || 'Error al eliminar producto');
             }
-            
+
         } catch (error) {
             console.error('Error eliminando producto:', error);
             await this.mostrarError('Error al eliminar producto: ' + error.message);

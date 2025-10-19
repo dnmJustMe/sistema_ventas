@@ -63,59 +63,62 @@ if ($partes_ruta[0] == 'sistema_ventas') {
                 $ruta_elegida = 'vistas/categorias.php';
                 break;
 
+            case 'servicios':
+                // Si no hay sesión y va a servicios → redirigir al login
+                if (!$sesionIniciada) {
+                    Redireccion::redirigir(SERVIDOR . '/login');
+                    break;
+                }
+                $ruta_elegida = 'vistas/servicios.php';
+                break;
+
             // Rutas para AJAX - IMPORTANTE: usar exit después de incluir
             case 'get_productos':
-                include_once 'app/scripts/productos.php';
-                exit;
-                break;
-
-            case 'get_categorias':
-                include_once 'app/scripts/categorias.php';
-                exit;
-                break;
-
             case 'crear_producto':
-                include_once 'app/scripts/productos.php';
-                exit;
-                break;
-
             case 'actualizar_producto':
-                include_once 'app/scripts/productos.php';
-                exit;
-                break;
-
             case 'eliminar_producto':
-                include_once 'app/scripts/productos.php';
-                exit;
-                break;
-
             case 'get_producto':
                 include_once 'app/scripts/productos.php';
                 exit;
                 break;
 
+            case 'get_categorias':
             case 'crear_categoria':
-                include_once 'app/scripts/categorias.php';
-                exit;
-                break;
-
             case 'actualizar_categoria':
-                include_once 'app/scripts/categorias.php';
-                exit;
-                break;
-
             case 'eliminar_categoria':
-                include_once 'app/scripts/categorias.php';
-                exit;
-                break;
-
             case 'get_categoria':
                 include_once 'app/scripts/categorias.php';
                 exit;
                 break;
 
+            case 'get_servicios':
+            case 'crear_servicio':
+            case 'actualizar_servicio':
+            case 'eliminar_servicio':
+            case 'get_servicio':
+                include_once 'app/scripts/servicios.php';
+                exit;
+                break;
+
             case 'procesar_login':
                 include_once 'app/scripts/procesar_login.php';
+                exit;
+                break;
+
+            case 'ofertas':
+                // Si no hay sesión y va a ofertas → redirigir al login
+                if (!$sesionIniciada) {
+                    Redireccion::redirigir(SERVIDOR . '/login');
+                }
+                $ruta_elegida = 'vistas/ofertas.php';
+                break;
+
+            // Rutas para AJAX - OFERTAS
+            case 'get_ofertas':
+            case 'crear_oferta':
+            case 'actualizar_oferta':
+            case 'eliminar_oferta':
+                include_once 'app/scripts/ofertas.php';
                 exit;
                 break;
         }

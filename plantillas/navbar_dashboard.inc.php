@@ -39,12 +39,28 @@
                 <span>Productos</span>
             </a>
         </li>
+
         <li class="menu-item <?php echo ($menu_activo === 'categorias') ? 'active' : ''; ?>">
             <a href="<?php echo RUTA_CATEGORIAS ?>">
                 <i class="fas fa-tags"></i>
                 <span>Categorías</span>
             </a>
         </li>
+        
+        <li class="menu-item <?php echo ($menu_activo === 'servicios') ? 'active' : ''; ?>">
+            <a href="<?php echo RUTA_SERVICIOS ?>">
+                <i class="fas fa-tags"></i>
+                <span>Servicios</span>
+            </a>
+        </li>
+        
+        <li class="menu-item <?php echo ($menu_activo === 'ofertas') ? 'active' : ''; ?>">
+            <a href="<?php echo RUTA_OFERTAS ?>">
+                <i class="fas fa-tags"></i>
+                <span>Ofertas</span>
+            </a>
+        </li>
+        
     </ul>
 </aside>
 

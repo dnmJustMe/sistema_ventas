@@ -1,5 +1,5 @@
 <?php
-// app/scripts/productos.php
+// app/scripts/servicios.php
 
 // Incluir archivos necesarios
 include_once 'app/util/config.inc.php';
@@ -22,18 +22,16 @@ if (!ControlSesion::sesion_iniciada()) {
 }
 
 // Incluir repositorios
-include_once 'app/repositorios/ProductoRepositorio.inc.php';
-include_once 'app/repositorios/CategoriaRepositorio.inc.php';
+include_once 'app/repositorios/ServicioRepositorio.inc.php';
 include_once 'app/repositorios/ImagenRepositorio.inc.php';
+include_once 'app/entidades/Servicio.inc.php';
 include_once 'app/entidades/Imagen.inc.php';
 
 header('Content-Type: application/json');
-// Iniciar buffer para evitar que cualquier "print/echo" rompa el JSON
-if (ob_get_level() === 0) { ob_start(); }
 
 // Configuración de subida de imágenes
-const IMG_MAX_BYTES = 5 * 1024 * 1024; // 5MB
-const IMG_ALLOWED_MIME = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+define('IMG_MAX_BYTES', 5 * 1024 * 1024); // 5MB
+define('IMG_ALLOWED_MIME', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif']);
 
 function obtener_directorio_upload() {
     // app/scripts -> subir dos niveles al root del proyecto
@@ -118,20 +116,13 @@ function procesar_subida_imagenes($conexion, $tipoEntidad, $entidadId) {
 
         // Guardar en BD solo el nombre del archivo
         $esPrincipal = 0;
-        // Marcar como principal si viene marcado en formulario (por índice)
-        if (isset($_POST['imagen_principal'])) {
-            // valores aceptados: index del file o 'nuevo' cuando viene de drag-drop
-            $principalIndex = $_POST['imagen_principal'];
-            if ($principalIndex !== '' && strval($principalIndex) === strval($i)) {
-                $esPrincipal = 1;
-            }
-        }
         
         // Crear imagen según el tipo de entidad
-        $imagen = new Imagen(null, 
-            $tipoEntidad === 'producto' ? $entidadId : null,
-            $tipoEntidad === 'oferta' ? $entidadId : null,
-            $tipoEntidad === 'servicio' ? $entidadId : null,
+        $imagen = new Imagen(
+            null, 
+            null, // producto_id
+            null, // oferta_id
+            $entidadId, // servicio_id
             $filename, 
             null, 
             $esPrincipal
@@ -177,14 +168,19 @@ function procesar_subida_imagen_principal($conexion, $tipoEntidad, $entidadId) {
     
     // Insertar y marcar como principal; limpiar anteriores
     $campoId = $tipoEntidad . '_id';
-    $conexion->prepare("UPDATE imagenes SET es_principal = 0 WHERE $campoId = :eid")
-        ->execute([':eid' => $entidadId]);
+    
+    // Primero quitar principal de todas las imágenes de este servicio
+    $sqlQuitarPrincipal = "UPDATE imagenes SET es_principal = 0 WHERE $campoId = :eid";
+    $stmtQuitar = $conexion->prepare($sqlQuitarPrincipal);
+    $stmtQuitar->bindParam(':eid', $entidadId, PDO::PARAM_INT);
+    $stmtQuitar->execute();
         
     // Crear imagen según el tipo de entidad
-    $imagen = new Imagen(null, 
-        $tipoEntidad === 'producto' ? $entidadId : null,
-        $tipoEntidad === 'oferta' ? $entidadId : null,
-        $tipoEntidad === 'servicio' ? $entidadId : null,
+    $imagen = new Imagen(
+        null, 
+        null, // producto_id
+        null, // oferta_id
+        $entidadId, // servicio_id
         $filename, 
         null, 
         1
@@ -276,11 +272,6 @@ function eliminar_imagenes_entidad($conexion, $tipoEntidad, $entidadId) {
     return $stmt->execute();
 }
 
-// Desactivar salida de errores en pantalla para no romper JSON
-@ini_set('display_errors', '0');
-@ini_set('display_startup_errors', '0');
-error_reporting(E_ALL);
-
 // Asegurar salida JSON limpia
 function send_json($payload, $status = 200) {
     http_response_code($status);
@@ -301,65 +292,68 @@ try {
             $busqueda = $_POST['busqueda'] ?? '';
             
             if (!empty($busqueda)) {
-                $productos = RepositorioProducto::buscar_producto_nombre($conexion, $busqueda);
+                $servicios = RepositorioServicio::buscar_servicio_nombre($conexion, $busqueda);
             } else {
-                $productos = RepositorioProducto::obtener_todos($conexion);
+                $servicios = RepositorioServicio::obtener_todos($conexion);
             }
             
-            // Obtener nombres de categorías para cada producto
-            $productosConCategorias = [];
-            foreach ($productos as $producto) {
-                $categoria = RepositorioCategoria::obtener_categoria_por_id($conexion, $producto->obtener_categoria_id());
-                $productoArray = [
-                    'id' => $producto->obtener_id(),
-                    'nombre' => $producto->obtener_nombre(),
-                    'descripcion' => $producto->obtener_descripcion(),
-                    'costo' => $producto->obtener_costo(),
-                    'precio_venta' => $producto->obtener_precio_venta(),
-                    'categoria_id' => $producto->obtener_categoria_id(),
-                    'categoria_nombre' => $categoria ? $categoria->obtener_nombre() : 'Sin categoría',
-                    'fecha_creado' => $producto->obtener_fecha_creado()
+            // Obtener imágenes para cada servicio
+            $serviciosConImagenes = [];
+            foreach ($servicios as $servicio) {
+                $imagenes = RepositorioImagen::obtener_imagenes_por_servicio($conexion, $servicio->obtener_id());
+                $imagenesArray = [];
+                if (!empty($imagenes)) {
+                    foreach ($imagenes as $img) {
+                        $imagenesArray[] = [
+                            'id' => $img->obtener_id(),
+                            'path' => $img->obtener_path(),
+                            'es_principal' => (bool)$img->obtener_es_principal(),
+                        ];
+                    }
+                }
+                $servicioArray = [
+                    'id' => $servicio->obtener_id(),
+                    'nombre' => $servicio->obtener_nombre(),
+                    'descripcion' => $servicio->obtener_descripcion(),
+                    'fecha_creado' => $servicio->obtener_fecha_creado(),
+                    'imagenes' => $imagenesArray
                 ];
-                $productosConCategorias[] = $productoArray;
+                $serviciosConImagenes[] = $servicioArray;
             }
             
             send_json([
                 'success' => true,
                 'data' => [
-                    'productos' => $productosConCategorias
+                    'servicios' => $serviciosConImagenes
                 ]
             ]);
+            break;
             
         case 'obtener':
             $id = $_POST['id'] ?? null;
             if ($id) {
-                $producto = RepositorioProducto::obtener_producto_por_id($conexion, $id);
-                if ($producto) {
-                    // Obtener imágenes del producto
-                    $imgs = RepositorioImagen::obtener_imagenes_por_producto($conexion, $id);
+                $servicio = RepositorioServicio::obtener_servicio_por_id($conexion, $id);
+                if ($servicio) {
+                    // Obtener imágenes del servicio
+                    $imgs = RepositorioImagen::obtener_imagenes_por_servicio($conexion, $id);
                     $imagenes = [];
                     if (!empty($imgs)) {
                         foreach ($imgs as $img) {
                             $imagenes[] = [
                                 'id' => $img->obtener_id(),
-                                'path' => $img->obtener_path(), // nombre de archivo
-                                'es_principal' => $img->obtener_es_principal(),
+                                'path' => $img->obtener_path(),
+                                'es_principal' => (bool)$img->obtener_es_principal(),
                             ];
                         }
                     }
-                    $categoria = RepositorioCategoria::obtener_categoria_por_id($conexion, $producto->obtener_categoria_id());
                     send_json([
                         'success' => true,
                         'data' => [
-                            'producto' => [
-                                'id' => $producto->obtener_id(),
-                                'nombre' => $producto->obtener_nombre(),
-                                'descripcion' => $producto->obtener_descripcion(),
-                                'costo' => $producto->obtener_costo(),
-                                'precio_venta' => $producto->obtener_precio_venta(),
-                                'categoria_id' => $producto->obtener_categoria_id(),
-                                'categoria_nombre' => $categoria ? $categoria->obtener_nombre() : 'Sin categoría',
-                                'fecha_creado' => $producto->obtener_fecha_creado(),
+                            'servicio' => [
+                                'id' => $servicio->obtener_id(),
+                                'nombre' => $servicio->obtener_nombre(),
+                                'descripcion' => $servicio->obtener_descripcion(),
+                                'fecha_creado' => $servicio->obtener_fecha_creado(),
                                 'imagenes' => $imagenes,
                             ]
                         ]
@@ -368,7 +362,7 @@ try {
                     send_json([
                         'success' => false,
                         'data' => [
-                            'message' => 'Producto no encontrado'
+                            'message' => 'Servicio no encontrado'
                         ]
                     ], 404);
                 }
@@ -380,14 +374,11 @@ try {
                     ]
                 ], 400);
             }
-            
+            break;
             
         case 'crear':
             $nombre = $_POST['nombre'] ?? '';
             $descripcion = $_POST['descripcion'] ?? '';
-            $costo = $_POST['costo'] ?? 0;
-            $precio_venta = $_POST['precio_venta'] ?? 0;
-            $categoria_id = $_POST['categoria_id'] ?? null;
             
             // Validaciones
             if (empty($nombre)) {
@@ -399,38 +390,43 @@ try {
                 ], 400);
             }
             
-            if (RepositorioProducto::nombre_existe($conexion, $nombre)) {
+            if (RepositorioServicio::nombre_existe($conexion, $nombre)) {
                 send_json([
                     'success' => false,
                     'data' => [
-                        'message' => 'Ya existe un producto con ese nombre'
+                        'message' => 'Ya existe un servicio con ese nombre'
                     ]
                 ], 409);
             }
             
-            $producto = new Producto(null, $nombre, $descripcion, $costo, $precio_venta, $categoria_id, null);
-            $insertado = RepositorioProducto::insertar_producto($conexion, $producto);
+            $servicio = new Servicio(null, $nombre, $descripcion, null);
+            $insertado = RepositorioServicio::insertar_servicio($conexion, $servicio);
             
             if ($insertado) {
-                // ID del producto insertado
-                $productoId = $conexion->lastInsertId();
+                // ID del servicio insertado
+                $servicioId = $conexion->lastInsertId();
+                
                 // Procesar imagen principal (obligatoria en creación)
-                $principalResult = procesar_subida_imagen_principal($conexion, 'producto', $productoId);
+                $principalResult = procesar_subida_imagen_principal($conexion, 'servicio', $servicioId);
+                
                 // Procesar imágenes adicionales si llegaron
-                $resultadoUpload = procesar_subida_imagenes($conexion, 'producto', $productoId);
+                $resultadoUpload = procesar_subida_imagenes($conexion, 'servicio', $servicioId);
+                
                 // Validar que haya al menos 1 imagen y una principal
-                $total = contar_imagenes_entidad($conexion, 'producto', $productoId);
-                if ($total === 0 || $principalResult['insertadas'] === 0) {
+                $total = contar_imagenes_entidad($conexion, 'servicio', $servicioId);
+                if ($total === 0) {
+                    // Si no hay imágenes, eliminar el servicio creado
+                    RepositorioServicio::eliminar_servicio($conexion, $servicioId);
                     send_json([
                         'success' => false,
-                        'data' => [ 'message' => 'Debe subir al menos una imagen del producto' ]
+                        'data' => [ 'message' => 'Debe subir al menos una imagen del servicio' ]
                     ], 400);
                 }
-                unificar_principal($conexion, 'producto', $productoId);
+                
                 send_json([
                     'success' => true,
                     'data' => [
-                        'message' => 'Producto creado exitosamente',
+                        'message' => 'Servicio creado exitosamente',
                         'imagenes_insertadas' => $resultadoUpload['insertadas'] + $principalResult['insertadas'],
                         'errores_imagenes' => array_merge($resultadoUpload['errores'], $principalResult['errores'])
                     ]
@@ -439,70 +435,71 @@ try {
                 send_json([
                     'success' => false,
                     'data' => [
-                        'message' => 'Error al crear el producto'
+                        'message' => 'Error al crear el servicio'
                     ]
                 ], 500);
             }
-            
+            break;
             
         case 'actualizar':
             $id = $_POST['id'] ?? null;
             $nombre = $_POST['nombre'] ?? '';
             $descripcion = $_POST['descripcion'] ?? '';
-            $costo = $_POST['costo'] ?? 0;
-            $precio_venta = $_POST['precio_venta'] ?? 0;
-            $categoria_id = $_POST['categoria_id'] ?? null;
             
             if (!$id) {
                 send_json([
                     'success' => false,
                     'data' => [
-                        'message' => 'ID de producto no especificado'
+                        'message' => 'ID de servicio no especificado'
                     ]
                 ], 400);
             }
             
-            // Verificar si el producto existe
-            $productoExistente = RepositorioProducto::obtener_producto_por_id($conexion, $id);
-            if (!$productoExistente) {
+            // Verificar si el servicio existe
+            $servicioExistente = RepositorioServicio::obtener_servicio_por_id($conexion, $id);
+            if (!$servicioExistente) {
                 send_json([
                     'success' => false,
                     'data' => [
-                        'message' => 'Producto no encontrado'
+                        'message' => 'Servicio no encontrado'
                     ]
                 ], 404);
             }
             
-            // Verificar si el nombre ya existe (excluyendo el producto actual)
-            if ($nombre !== $productoExistente->obtener_nombre()) {
-                if (RepositorioProducto::nombre_existe($conexion, $nombre)) {
+            // Verificar si el nombre ya existe (excluyendo el servicio actual)
+            if ($nombre !== $servicioExistente->obtener_nombre()) {
+                if (RepositorioServicio::nombre_existe($conexion, $nombre)) {
                     send_json([
                         'success' => false,
                         'data' => [
-                            'message' => 'Ya existe otro producto con ese nombre'
+                            'message' => 'Ya existe otro servicio con ese nombre'
                         ]
                     ], 409);
                 }
             }
             
-            $actualizado = RepositorioProducto::actualizar_producto($conexion, $id, $nombre, $descripcion, $costo, $precio_venta, $categoria_id);
+            $actualizado = RepositorioServicio::actualizar_servicio($conexion, $id, $nombre, $descripcion);
             
             if ($actualizado) {
                 // Si subieron imagen principal nueva, procesarla (reemplaza principal)
-                $principalResult = procesar_subida_imagen_principal($conexion, 'producto', $id);
+                $principalResult = procesar_subida_imagen_principal($conexion, 'servicio', $id);
 
                 // Eliminar imágenes solicitadas (si hay)
                 if (!empty($_POST['imagenes_eliminar'])) {
                     $idsEliminar = array_filter(array_map('intval', explode(',', $_POST['imagenes_eliminar'])));
                     if (!empty($idsEliminar)) {
                         $uploadDir = obtener_directorio_upload();
-                        $existentes = RepositorioImagen::obtener_imagenes_por_producto($conexion, $id);
+                        $existentes = RepositorioImagen::obtener_imagenes_por_servicio($conexion, $id);
                         $mapa = [];
-                        foreach ($existentes as $img) { $mapa[$img->obtener_id()] = $img; }
+                        foreach ($existentes as $img) { 
+                            $mapa[$img->obtener_id()] = $img; 
+                        }
                         foreach ($idsEliminar as $imgId) {
                             if (isset($mapa[$imgId])) {
                                 $file = $uploadDir . $mapa[$imgId]->obtener_path();
-                                if (is_file($file)) { @unlink($file); }
+                                if (is_file($file)) { 
+                                    @unlink($file); 
+                                }
                                 RepositorioImagen::eliminar_imagen($conexion, $imgId);
                             }
                         }
@@ -510,32 +507,35 @@ try {
                 }
 
                 // Subir nuevas imágenes si llegaron
-                $resultadoUpload = procesar_subida_imagenes($conexion, 'producto', $id);
+                $resultadoUpload = procesar_subida_imagenes($conexion, 'servicio', $id);
 
                 // Determinar y fijar principal
                 $preferId = null;
                 if (!empty($_POST['imagen_principal_existente']) && ($principalResult['insertadas'] ?? 0) === 0) {
                     $preferId = (int)$_POST['imagen_principal_existente'];
                 }
-                unificar_principal($conexion, 'producto', $id, $preferId);
+                
+                if ($preferId) {
+                    unificar_principal($conexion, 'servicio', $id, $preferId);
+                }
 
                 send_json([
                     'success' => true,
                     'data' => [
-                        'message' => 'Producto actualizado exitosamente',
+                        'message' => 'Servicio actualizado exitosamente',
                         'imagenes_insertadas' => $resultadoUpload['insertadas'] + ($principalResult['insertadas'] ?? 0),
-                        'errores_imagenes' => array_merge($resultadoUpload['errores'], $principalResult['errores'] ?? [])
+                        'errores_imagenes' => array_merge($resultadoUpload['errores'] ?? [], $principalResult['errores'] ?? [])
                     ]
                 ]);
             } else {
                 send_json([
                     'success' => false,
                     'data' => [
-                        'message' => 'Error al actualizar el producto'
+                        'message' => 'Error al actualizar el servicio'
                     ]
                 ], 500);
             }
-            
+            break;
             
         case 'eliminar':
             $id = $_POST['id'] ?? null;
@@ -543,39 +543,48 @@ try {
             if (!$id) {
                 send_json([
                     'success' => false,
-                    'message' => 'ID de producto no especificado'
+                    'message' => 'ID de servicio no especificado'
                 ], 400);
             }
             
-            // Eliminar imágenes asociadas al producto
-            eliminar_imagenes_entidad($conexion, 'producto', $id);
+            // Eliminar imágenes asociadas al servicio
+            eliminar_imagenes_entidad($conexion, 'servicio', $id);
             
-            // Eliminar producto (las filas de imágenes se borran por FK ON DELETE CASCADE)
-            $eliminado = RepositorioProducto::eliminar_producto($conexion, $id);
+            // Eliminar servicio
+            $eliminado = RepositorioServicio::eliminar_servicio($conexion, $id);
             
             if ($eliminado) {
                 send_json([
                     'success' => true,
-                    'message' => 'Producto eliminado exitosamente'
+                    'data' => [
+                        'message' => 'Servicio eliminado exitosamente'
+                    ]
                 ]);
             } else {
                 send_json([
                     'success' => false,
-                    'message' => 'Error al eliminar el producto'
+                    'data' => [
+                        'message' => 'Error al eliminar el servicio'
+                    ]
                 ], 500);
             }
-            
+            break;
             
         default:
             send_json([
                 'success' => false,
-                'message' => 'Acción no válida: ' . $accion
+                'data' => [
+                    'message' => 'Acción no válida: ' . $accion
+                ]
             ], 400);
     }
     
 } catch (Exception $e) {
+    error_log("Error en servicios.php: " . $e->getMessage());
     send_json([
         'success' => false,
-        'message' => 'Error del servidor: ' . $e->getMessage()
+        'data' => [
+            'message' => 'Error del servidor: ' . $e->getMessage()
+        ]
     ], 500);
 }

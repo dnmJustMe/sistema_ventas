@@ -11,6 +11,8 @@ define("RUTA_LOGOUT", SERVIDOR. "/logout");
 define("RUTA_DASHBOARD", SERVIDOR. "/dashboard");
 define("RUTA_PRODUCTOS", SERVIDOR. "/productos");
 define("RUTA_CATEGORIAS", SERVIDOR. "/categorias");
+define("RUTA_SERVICIOS", SERVIDOR. "/servicios");
+define("RUTA_OFERTAS", SERVIDOR. "/ofertas");
 
 
 
